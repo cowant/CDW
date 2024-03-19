@@ -18,6 +18,10 @@ class A {
       int a_{0};
 };
 
+void F(A a) {
+    std::cout << "xxx" << std::endl;
+}
+
 
 int main() {
     A a1{10};
@@ -30,6 +34,7 @@ int main() {
     // 隐式调用它，那么在函数决议时就找不到可用函数，于是调用
     // 失败
     A a3 = a2;
+    F(a2);
 
     return 0;
 }
