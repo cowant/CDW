@@ -12,7 +12,7 @@ class A {
 
       A(const A& rhs) {
           a_ = rhs.a_;
-          std::cout << "A::A(A&): object at " << this << " has value: " << a_ << std::endl;
+          std::cout << "A::A(const A&): object at " << this << " has value: " << a_ << std::endl;
       }
 
       void Display() const {
@@ -41,6 +41,7 @@ struct B {
 int main() {
     A a1;
 
+    // 用=定义变量
     std::cout << std::endl << "case: 1)"  << std::endl;
     A a2 = a1;
 

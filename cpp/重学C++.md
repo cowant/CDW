@@ -32,6 +32,18 @@
     - [bind函数](#bind%E5%87%BD%E6%95%B0)
 - [智能指针](#%E6%99%BA%E8%83%BD%E6%8C%87%E9%92%88)
     - [循环引用问题](#%E5%BE%AA%E7%8E%AF%E5%BC%95%E7%94%A8%E9%97%AE%E9%A2%98)
+    - [weak_ptr解决循环引用问题](#weak_ptr%E8%A7%A3%E5%86%B3%E5%BE%AA%E7%8E%AF%E5%BC%95%E7%94%A8%E9%97%AE%E9%A2%98)
+    - [enable_shared_from_this](#enable_shared_from_this)
+- [拷贝构造函数](#%E6%8B%B7%E8%B4%9D%E6%9E%84%E9%80%A0%E5%87%BD%E6%95%B0)
+    - [直接初始化和拷贝初始化](#%E7%9B%B4%E6%8E%A5%E5%88%9D%E5%A7%8B%E5%8C%96%E5%92%8C%E6%8B%B7%E8%B4%9D%E5%88%9D%E5%A7%8B%E5%8C%96)
+    - [拷贝构造函数的参数为什么是引用类型？](#%E6%8B%B7%E8%B4%9D%E6%9E%84%E9%80%A0%E5%87%BD%E6%95%B0%E7%9A%84%E5%8F%82%E6%95%B0%E4%B8%BA%E4%BB%80%E4%B9%88%E6%98%AF%E5%BC%95%E7%94%A8%E7%B1%BB%E5%9E%8B)
+    - [拷贝构造函数的参数为什么一般是const引用类型？](#%E6%8B%B7%E8%B4%9D%E6%9E%84%E9%80%A0%E5%87%BD%E6%95%B0%E7%9A%84%E5%8F%82%E6%95%B0%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%80%E8%88%AC%E6%98%AFconst%E5%BC%95%E7%94%A8%E7%B1%BB%E5%9E%8B)
+    - [是否可以将拷贝构造函数定义为explicit？](#%E6%98%AF%E5%90%A6%E5%8F%AF%E4%BB%A5%E5%B0%86%E6%8B%B7%E8%B4%9D%E6%9E%84%E9%80%A0%E5%87%BD%E6%95%B0%E5%AE%9A%E4%B9%89%E4%B8%BAexplicit)
+        - [-std=c++17无视explicit修饰依然能elide constructor？](#-stdc17%E6%97%A0%E8%A7%86explicit%E4%BF%AE%E9%A5%B0%E4%BE%9D%E7%84%B6%E8%83%BDelide-constructor)
+- [返回值优化](#%E8%BF%94%E5%9B%9E%E5%80%BC%E4%BC%98%E5%8C%96)
+    - [强制执行URVO](#%E5%BC%BA%E5%88%B6%E6%89%A7%E8%A1%8Curvo)
+    - [NRVO](#nrvo)
+    - [纯右值语义](#%E7%BA%AF%E5%8F%B3%E5%80%BC%E8%AF%AD%E4%B9%89)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -2037,5 +2049,910 @@ newCallable(arg1, arg2, arg3, ...)
 
 ## 循环引用问题
 
+使用智能指针需要注意的一个问题是避免循环引用。如果两个对象互相引用了对方，这就是循环引用问题。
+
+**test24/main1.cc**
+```c++
+#include <iostream>
+#include <string>
+#include <memory>
+#include <format>
+
+class A {
+public:
+    A() = default;
+    A(int a) : a_{a} {
+        std::string fstr = std::format("constructing @ {}", static_cast<void *>(this));
+        std::cout << fstr << std::endl;
+    }
+
+    ~A() {
+        std::string fstr = std::format("destructing @ {}", static_cast<void *>(this));
+        std::cout << fstr << std::endl;
+    }
+
+    void SetNext(std::shared_ptr<A> ptr) {
+        next_ = ptr;
+    }
+private:
+    int a_{0};
+    std::shared_ptr<A> next_;
+};
+
+int main() {
+    auto a1 = std::make_shared<A>(1);
+    auto a2 = std::make_shared<A>(2);
+
+    a1->SetNext(a2);
+    a2->SetNext(a1);
+
+    return 0;
+}
+```
+
+编译并运行：
+```bash
+$ g++ main1.cc   -std=c++20
+$ ./a.out
+constructing @ 0x55c8d79a32c0
+constructing @ 0x55c8d79a32f0
+```
+
+发现构造的两个A对象在程序退出时并没有被析构，假设构造的两个对象是obj1和obj2,
+
+那么obj1有两个智能指针指向它：
+- a1
+- obj2.next_
+
+同理，指向obj2的两个智能指针：
+- a2
+- obj1.next_
+
+当a1析构时，对obj1的引用计数从2变为1，于是obj1不会被析构。同理，obj2也不会被释放。
+
+
+## weak_ptr解决循环引用问题
+
+因为A::next_成员的存在，导致object的引用技术可能大于1,那就换成weak_ptr，它不增加引用计数：
+
+**test24/main2.cc**
+
+```cpp
+#include <iostream>
+#include <string>
+#include <memory>
+#include <format>
+
+class A {
+public:
+    A() = default;
+    A(int a) : a_{a} {
+        std::string fstr = std::format("constructing @ {}", static_cast<void *>(this));
+        std::cout << fstr << std::endl;
+    }
+
+    ~A() {
+        std::string fstr = std::format("destructing @ {}", static_cast<void *>(this));
+        std::cout << fstr << std::endl;
+    }
+
+    void SetNext(std::shared_ptr<A> ptr) {
+        next_ = ptr;
+    }
+private:
+    int a_{0};
+    std::weak_ptr<A> next_;
+};
+
+int main() {
+    auto a1 = std::make_shared<A>(1);
+    auto a2 = std::make_shared<A>(2);
+
+    a1->SetNext(a2);
+    a2->SetNext(a1);
+
+    return 0;
+}
+```
+
+编译并运行，可以看到object被释放：
+
+```bash
+$ g++ -std=c++20 main2.cc
+$ ./a.out
+constructing @ 0x55b1eb2302c0
+constructing @ 0x55b1eb2302f0
+destructing @ 0x55b1eb2302f0
+destructing @ 0x55b1eb2302c0
+```
+
 ## enable_shared_from_this
 
+
+# 拷贝构造函数
+
+如果一个**构造函数**的**第一个参数**是其自身类类型的**引用**，且其他额外参数都有默认值，则此构造函数是拷贝构造函数。
+
+## 直接初始化和拷贝初始化
+
+```cpp
+std::string dots(10, '.'); // 直接初始化
+std::string s(dots); // 直接初始化
+std::string s2 = dots; // 拷贝初始化
+std::string null_book = "9-999-99999-9"; // 拷贝初始化
+std::string nines = std::string(100, '9'); // 拷贝初始化
+```
+
+如果使用等号(=)初始化一个变量，实际上执行的是拷贝(移动)初始化，编译器把等号右侧的初始值拷贝(移动)到新创建的对象中去。这种操作是编译器通过隐式调用拷贝构造函数或者移动构造函数实现的。如果拷贝构造函数(移动构造函数被声明为explicit)，那么编译器就不能进行隐式调用了，此时就会编译报错。
+
+
+当使用直接初始化时，我们实际上是要求编译器使用普通的函数匹配来选择与我们提供的参数最匹配的构造函数。```这里的直接初始化，是指在代码里直接进行了函数调用，所以这种初始化语法使用了与函数调用一致的括号语法()```，括号里面是用于初始化的实际参数。
+
+
+拷贝(移动)初始化不仅在我们用=定义变量时会发生，在下列情况下也会发生：
+
+- 将一个对象作为实参传递给一个非引用类型的参数
+- 从一个返回类型为非引用类型的函数返回一个对象
+- 用花括号列表初始化一个数组中的元素或一个聚合类中的成员
+
+
+**test25/main1.cc**
+```cpp
+#include <iostream>
+
+class A {
+  public:
+      A() {
+          std::cout << "A::A(): object at " << this << " has value: " << a_ << std::endl;
+      };
+
+      explicit A(int a) : a_{a} {
+          std::cout << "A::A(int): object at " << this << " has value: " << a_ << std::endl;
+      }
+
+      A(const A& rhs) {
+          a_ = rhs.a_;
+          std::cout << "A::A(const A&): object at " << this << " has value: " << a_ << std::endl;
+      }
+
+      void Display() const {
+        std::cout << a_ << std::endl;
+      }
+
+  public:
+      int a_{0};
+};
+
+
+void Func1(A a) {
+    // do nothing
+}
+
+A Func2(int i) {
+    A a(i * i);
+    return a;
+}
+
+struct B {
+    double d_;
+    A a_;
+};
+
+int main() {
+    A a1;
+
+    // 用=定义变量
+    std::cout << std::endl << "case: 1)"  << std::endl;
+    A a2 = a1;
+
+    // 形参类型为非引用类型
+    std::cout << std::endl << "case: 2)"  << std::endl;
+    Func1(a1);
+
+    // 返回类型为非引用类型
+    std::cout << std::endl << "case: 3)"  << std::endl;
+    A a3 = Func2(10);
+
+    // 数组列表初始化
+    std::cout << std::endl << "case: 4)"  << std::endl;
+    A arr[2] = {a1, a1};
+
+    // 聚合类列表初始化
+    std::cout << std::endl << "case: 5)"  << std::endl;
+    B b{1.1, a1};
+
+
+    return 0;
+}
+```
+
+编译并运行
+
+```bash
+$ g++  -o main1 main1.cc -std=c++20
+$ ./main1
+A::A(): object at 0x7ffdd00edbf4 has value: 0
+
+case: 1)
+A::A(const A&): object at 0x7ffdd00edbf8 has value: 0
+
+case: 2)
+A::A(const A&): object at 0x7ffdd00edc00 has value: 0
+
+case: 3)
+A::A(int): object at 0x7ffdd00edbfc has value: 100
+
+case: 4)
+A::A(const A&): object at 0x7ffdd00edc10 has value: 0
+A::A(const A&): object at 0x7ffdd00edc14 has value: 0
+
+case: 5)
+A::A(const A&): object at 0x7ffdd00edc08 has value: 0
+```
+
+## 拷贝构造函数的参数为什么是引用类型？
+
+如果不是引用类型，那么在调用拷贝构造函数时，会先调用拷贝构造函数传入实参，发生无穷递归调用。
+
+**test25/main2.cc**
+```cpp
+#include <iostream>
+
+class A {
+  public:
+      A() {
+          std::cout << "A::A(): object at " << this << " has value: " << a_ << std::endl;
+      };
+
+      explicit A(int a) : a_{a} {
+          std::cout << "A::A(int): object at " << this << " has value: " << a_ << std::endl;
+      }
+
+      A(A rhs) {
+          a_ = rhs.a_;
+          std::cout << "A::A(A&): object at " << this << " has value: " << a_ << std::endl;
+      }
+  public:
+      int a_{0};
+};
+
+
+int main() {
+    A a1;
+
+    A a2 = a1;
+
+    return 0;
+}
+```
+
+```bash
+$ g++ -o main2 main2.cc -std=c++20
+main2.cc:13:7: error: invalid constructor; you probably meant ‘A (const A&)’
+   13 |       A(A rhs) {
+      |       ^
+```
+
+编译器直接报错，不允许将拷贝构造函数的参数定义为非引用类型
+
+
+## 拷贝构造函数的参数为什么一般是const引用类型？
+
+可以将构造函数的参数定义为非const引用，但是非const的引用只能绑定到左值上，所以拷贝构造函数的形参只能是左值，当用临时对象拷贝构造对象时就用不了拷贝构造函数了。
+
+**test25/main3.cc**
+
+```cpp
+#include <iostream>
+
+class A {
+  public:
+      A() {
+          std::cout << "A::A(): object at " << this << " has value: " << a_ << std::endl;
+      };
+
+      ~A() {
+        std::cout << "A::~A(): object at " << this << " has value: " << a_ << std::endl;
+      }
+
+      explicit A(int a) : a_{a} {
+          std::cout << "A::A(int): object at " << this << " has value: " << a_ << std::endl;
+      }
+
+      A(A& rhs) {
+          a_ = rhs.a_;
+          std::cout << "A::A(A&): object at " << this << " has value: " << a_ << std::endl;
+      }
+  public:
+      int a_{0};
+};
+
+
+A Func(int i) {
+    A a(i * i);
+    return a;
+}
+
+int main() {
+    A a1 = Func(10);
+
+    return 0;
+}
+```
+
+这个例子在不同的编译标准下行为有些不同, 先看下这条语句：
+
+```cpp
+A a1 = Func(10);
+```
+
+可以拆分为如下形式：
+
+```cpp
+A a(10*10); // 调用A::A(int)构造函数
+A anonymous = a; // return a; 调用拷贝构造函数/移动构造函数
+A a1 = anonymous; // a1拷贝初始化，调用拷贝构造函数/移动构造函数
+```
+
+其中**A anonymous = a**的拷贝构造/移动构造过程可以被NRVO优化，**A a1 = anonymous**的步骤可以被URVO优化。
+
+接下来我们进行编译：
+
+**按照C++11/14标准编译将会报错:**
+
+```bash
+$ g++   -o main3 main3.cc  -std=c++11
+main3.cc: In function ‘int main()’:
+main3.cc:32:15: error: cannot bind non-const lvalue reference of type ‘A&’ to an rvalue of type ‘A’
+   32 |     A a = Func(10);
+      |           ~~~~^~~~
+main3.cc:17:12: note:   initializing argument 1 of ‘A::A(A&)’
+   17 |       A(A& rhs) : a_{rhs.a_} {
+```
+
+报错发生在**A a1 = anonymous**这个步骤，虽然可以做URVO优化，但是C++11/C++14在做这个优化时，要求类的拷贝构造函数/移动构造函数是可用的，现在我们定义了拷贝构造函数，但没有定义移动构造函数，那么编译器也不会合成移动构造函数，所以构造函数的最佳匹配是拷贝构造函数，但因为我们用的是非const的引用作为形参，那么匿名对象作为右值就不能绑定到非const引用上，于是报错。
+
+用clang编译器编译一下，报错信息更加好懂一点：
+```bash
+$ clang++-19   -o main3 main3.cc  -std=c++11
+main3.cc:32:7: error: no matching constructor for initialization of 'A'
+   32 |     A a = Func(10);
+      |       ^   ~~~~~~~~
+main3.cc:17:7: note: candidate constructor not viable: expects an lvalue for 1st argument
+   17 |       A(A& rhs) : a_{rhs.a_} {
+      |       ^ ~~~~~~
+main3.cc:9:16: note: explicit constructor is not a candidate
+    9 |       explicit A(int a) : a_{a} {
+      |                ^
+main3.cc:5:7: note: candidate constructor not viable: requires 0 arguments, but 1 was provided
+    5 |       A() {
+      |       ^
+1 error generated.
+```
+
+**按照C++17/C++20标准编译不会报错:**
+
+```bash
+$ g++   -o main3 main3.cc  -std=c++17
+$ ./main3
+A::A(int): object at 0x7ffff414f984 has value: 100
+a @0x7ffff414f984
+A::~A(): object at 0x7ffff414f984 has value: 100
+$
+$ g++   -o main3 main3.cc  -std=c++17 -fno-elide-constructors
+$ ./main3
+A::A(int): object at 0x7ffd41f8f884 has value: 100
+A::A(A&): {lhs : rhs} <==> {0x7ffd41f8f8b4 : 0x7ffd41f8f884}
+A::~A(): object at 0x7ffd41f8f884 has value: 100
+a @0x7ffd41f8f8b4
+A::~A(): object at 0x7ffd41f8f8b4 has value: 100
+```
+
+为什么C++17/C++20不会报错呢？因为C++17/C++20强制执行URVO优化，并且执行URVO优化时不要求拷贝构造函数/移动构造函数必须可见。那么**A a1 = anonymous**这一步对C++17/C++20标准来说相当于不存在，只有如下步骤：
+
+```cpp
+A a(10*10);
+A a1 = a;
+```
+
+所以可以通过编译。
+
+可是C++23也强制执行URVO，为什么反而又报错了？
+
+```bash
+$ g++   -o main3 main3.cc  -std=c++23
+main3.cc: In function ‘A Func(int)’:
+main3.cc:28:12: error: cannot bind non-const lvalue reference of type ‘A&’ to an rvalue of type ‘A’
+   28 |     return a;
+      |            ^
+main3.cc:17:12: note:   initializing argument 1 of ‘A::A(A&)’
+   17 |       A(A& rhs) : a_{rhs.a_} {
+      |         ~~~^~~
+```
+
+并且报错的地方与C++11还不同，是在**A nonymous = a**也就是**return a**语句报错。原因是从C++23开始，**return a**是一个**move -eligible expression**:
+
+**Move-eligible expressions:**
+
+```
+Although an expression consisting of the name of any variable is an lvalue expression, such expression
+may be move-eligible if it appears as the operand of
+
+- a return statement
+- a co_return statement (since C++20)
+- a throw expression (since C++17)
+
+If an expression is move-eligible, it is treated either as an rvalue or as an lvalue(until C++23) as an
+rvalue (since C++23) for the purpose of overload resolution (thus it may select the move constructor).
+```
+
+也就是说，对于C++23，**return a**是一个右值表达式(C++11/C++14/C++17/C++20都是左值表达式)，虽然也可以执行NRVO优化，但由于NRVO要求拷贝构造函数/移动构造函数可见且能正确执行，经过重载决议后发现拷贝构造函数的形参是非const引用，不能绑定到右值，于是对**return a**语句报错。
+
+## 是否可以将拷贝构造函数定义为explicit？
+
+语法上没有问题，但这样做的后果就是类没法进行拷贝初始化，只能直接初始化。从这个例子我们看出直接初始化和拷贝初始化的明显区别。
+
+```cpp
+// test4
+#include <iostream>
+
+class A {
+  public:
+      A() {
+          std::cout << "A::A(): object at " << this << " has value: " << a_ << std::endl;
+      };
+
+      explicit A(int a) : a_{a} {
+          std::cout << "A::A(int): object at " << this << " has value: " << a_ << std::endl;
+      }
+
+      explicit A(const A& rhs) {
+          a_ = rhs.a_;
+          std::cout << "A::A(A&): object at " << this << " has value: " << a_ << std::endl;
+      }
+  public:
+      int a_{0};
+};
+
+
+int main() {
+    A a1{10};
+
+    // 正确，直接初始化，由用户显式调用拷贝构造函数
+    A a2(a1);
+
+    // 错误，拷贝初始化，它要求编译器隐式调用拷贝构造函数，但
+    // 我们已经将拷贝构造函数声明为explicit的，所以编译器不能
+    // 隐式调用它，那么在函数决议时就找不到可用函数，于是调用
+    // 失败
+    A a3 = a2;
+
+    return 0;
+}
+```
+
+c++20和c++11标准都会报错：
+
+```bash
+$ g++ main.cc  -std=c++11 -felide-constructors
+main.cc: In function ‘int main()’:
+main.cc:32:12: error: no matching function for call to ‘A::A(A&)’
+   32 |     A a3 = a2;
+      |            ^~
+main.cc:5:7: note: candidate: ‘A::A()’
+    5 |       A() {
+      |       ^
+main.cc:5:7: note:   candidate expects 0 arguments, 1 provided
+$
+$ g++ main.cc  -std=c++20
+main.cc: In function ‘int main()’:
+main.cc:32:12: error: no matching function for call to ‘A::A(A&)’
+   32 |     A a3 = a2;
+      |            ^~
+main.cc:5:7: note: candidate: ‘A::A()’
+    5 |       A() {
+      |       ^
+main.cc:5:7: note:   candidate expects 0 arguments, 1 provided
+
+```
+
+### -std=c++17无视explicit修饰依然能elide constructor？
+
+```cpp
+// test5
+#include <iostream>
+
+class A {
+  public:
+      A() {
+          std::cout << "A::A(): object at " << this << " has value: " << a_ << std::endl;
+      };
+
+      explicit A(int a) : a_{a} {
+          std::cout << "A::A(int): object at " << this << " has value: " << a_ << std::endl;
+      }
+
+      explicit A(const A& rhs) {
+          a_ = rhs.a_;
+          std::cout << "A::A(const A&): object at " << this << " has value: " << a_ << std::endl;
+      }
+  public:
+      int a_{0};
+};
+
+
+int main() {
+    A a1{10};
+
+    // 正确，直接初始化，由用户显式调用拷贝构造函数
+    A a2(a1);
+
+    // 这里我们先显式构造一个临时对象A(a2)，这是没有问题的，然后用这个临时对象隐式
+    // 调用拷贝构造函数。按道理来说是不行的，所以即使我们使用elide constructor优化
+    // 那么对于-std=C++11, 还是会编译报错，因为此时编译器需要检查这个拷贝构造函数是
+    // 可用的，但显然它是explicit的，并不可用。
+    //
+    // 而对于-std=c++17或者-std=c++20，这种写法并没有问题，也就是c++17和c++20强制使用
+    // elide constructor, 而不管拷贝构造函数此时是否是explicit。
+    A a3 = A(a2);
+
+    return 0;
+}
+```
+
+编译：
+
+```bash
+$ g++ main.cc  -std=c++11
+main.cc: In function ‘int main()’:
+main.cc:35:16: error: no matching function for call to ‘A::A(A)’
+   35 |     A a3 = A(a2);
+      |                ^
+main.cc:5:7: note: candidate: ‘A::A()’
+    5 |       A() {
+      |       ^
+main.cc:5:7: note:   candidate expects 0 arguments, 1 provided
+
+
+$ g++ main.cc  -std=c++17
+$ ./a.out
+A::A(int): object at 0x7ffe2d4fb12c has value: 10
+A::A(const A&): object at 0x7ffe2d4fb130 has value: 10
+A::A(const A&): object at 0x7ffe2d4fb134 has value: 10
+```
+
+# 返回值优化
+
+返回值优化分为NRVO和RVO:
+
+In a return statement in a function with a class return type, when the operand is the name of a non-volatile object obj with automatic storage duration (other than a function parameter or a handler parameter), the copy-initialization of the result object can be omitted by constructing obj directly into the function call’s result object. This variant of copy elision is known as named return value optimization (NRVO).
+
+When a class object target is copy-initialized with a **temporary** class object obj that has not been bound to a reference, the copy-initialization can be omitted by constructing obj directly into target. This variant of copy elision is known as unnamed return value optimization (URVO). Since C++17, URVO is mandatory and no longer considered a form of copy elision.
+
+## 强制执行URVO
+
+从C++17开始，URVO成为了强制标准。
+
+**test26/main1.cc**
+
+```cpp
+#include <iostream>
+
+class A {
+  public:
+      A() {
+          std::cout << "A::A(): object at " << this << " has value: " << a_ << std::endl;
+      };
+
+      explicit A(int a) : a_{a} {
+          std::cout << "A::A(int): object at " << this << " has value: " << a_ << std::endl;
+      }
+
+      ~A() {
+          std::cout << "A::~A(): object at " << this << " has value: " << a_ << std::endl;
+      };
+
+      A(const A& rhs) : a_{rhs.a_} {
+          std::printf("A::A(const A&): {lhs : rhs} <==> {%p : %p}\n", this, &rhs);
+      }
+
+      A(A&& rhs) : a_{rhs.a_} {
+          std::printf("A::A(A&&): {lhs : rhs} <==> {%p : %p}\n", this, &rhs);
+      }
+
+  public:
+      int a_{0};
+};
+
+
+int main() {
+    A a1 = A(10);
+
+    return 0;
+}
+```
+
+打开返回值优化的情况下，按照C++11/14/17/20标准编译后运行的结果都是一致的：
+
+```bash
+$ g++ -o main1 main1.cc  -std=c++20
+$
+$
+$ ./main1
+A::A(int): object at 0x7ffff00e2e14 has value: 10
+A::~A(): object at 0x7ffff00e2e14 has value: 10
+```
+
+可以看到经过优化，编译器只需调用A::A(int)构造最终的对象a1即可。
+
+如果使用`-fno-elide-constructors`关闭返回值优化，看看不同标准下的运行结果：
+
+
+**C++11/C++14**
+
+```bash
+$ g++ -o main1 main1.cc  -std=c++11 -fno-elide-constructors
+$
+$
+$ ./main1
+A::A(int): object at 0x7ffeccaf43d4 has value: 10
+A::A(A&&): {lhs : rhs} <==> {0x7ffeccaf43d0 : 0x7ffeccaf43d4}
+A::~A(): object at 0x7ffeccaf43d4 has value: 10
+A::~A(): object at 0x7ffeccaf43d0 has value: 10
+```
+
+可以看到发生了一次移动构造。A(10)构造了一个匿名临时对象，然后这个临时对象传入移动构造函数构造对象a1。根据临时对象和a1的内存地址来看，编译器先给a1分配内存，然后在这块内存上构造a1。
+
+**C++17/C++20/C++ 23**
+
+```bash
+$ g++ -o main1 main1.cc  -std=c++23  -fno-elide-constructors
+$
+$
+$ ./main1
+A::A(int): object at 0x7ffc05cad144 has value: 10
+A::~A(): object at 0x7ffc05cad144 has value: 10
+```
+
+运行结果少了一次移动构造，即使我们禁用了Copy elision。但在C++17之后这已经是强制标准了，所以仍然执行URVO。
+
+## NRVO
+
+编译器标准并没用规定强制执行NRVO。
+
+**test26/main2.cc**
+
+```cpp
+#include <iostream>
+
+class A {
+  public:
+      A() {
+          std::cout << "A::A(): object at " << this << " has value: " << a_ << std::endl;
+      };
+
+      explicit A(int a) : a_{a} {
+          std::cout << "A::A(int): object at " << this << " has value: " << a_ << std::endl;
+      }
+
+      ~A() {
+          std::cout << "A::~A(): object at " << this << " has value: " << a_ << std::endl;
+      };
+
+      A(const A& rhs) : a_{rhs.a_} {
+          std::printf("A::A(const A&): {lhs : rhs} <==> {%p : %p}\n", this, &rhs);
+      }
+
+      A(A&& rhs) : a_{rhs.a_} {
+          std::printf("A::A(A&&): {lhs : rhs} <==> {%p : %p}\n", this, &rhs);
+      }
+
+  public:
+      int a_{0};
+};
+
+
+A Func(int i) {
+    A a(i * i);
+    return a;
+}
+
+int main() {
+    Func(100);
+
+    return 0;
+}
+```
+
+开启NRVO，C++11 ~ C++20结果都是一样，额外的移动构造被优化：
+
+```bash
+$ g++ -o main2 main2.cc  -std=c++11
+$
+$ ./main2
+A::A(int): object at 0x7ffdc4eeb6d4 has value: 10000
+A::~A(): object at 0x7ffdc4eeb6d4 has value: 10000
+```
+
+如果使用`-fno-elide-constructors`关闭NRVO返回值优化，不同编译标准下的运行结果也一致：
+
+```bash
+$ g++ -o main2 main2.cc  -std=c++20   -fno-elide-constructors
+$
+$ ./main2
+A::A(int): object at 0x7fff85ce3354 has value: 10000
+A::A(A&&): {lhs : rhs} <==> {0x7fff85ce3384 : 0x7fff85ce3354}
+A::~A(): object at 0x7fff85ce3354 has value: 10000
+A::~A(): object at 0x7fff85ce3384 has value: 10000
+$
+$
+$ g++ -o main2 main2.cc  -std=c++11   -fno-elide-constructors
+$
+$
+$ ./main2
+A::A(int): object at 0x7ffef967a094 has value: 10000
+A::A(A&&): {lhs : rhs} <==> {0x7ffef967a0c4 : 0x7ffef967a094}
+A::~A(): object at 0x7ffef967a094 has value: 10000
+A::~A(): object at 0x7ffef967a0c4 has value: 10000
+```
+
+可以看到在关闭了NRVO之后，编译器调用移动构造函数返回一个具名的局部对象。
+
+
+## 纯右值语义
+
+**Prvalue semantics ("guaranteed copy elision") :**
+
+Since C++17, a prvalue is not materialized until needed, and then it is constructed directly into the storage of its final destination. This sometimes means that even when the language syntax visually suggests a copy/move (e.g. copy initialization), no copy/move is performed — which means the type need not have an accessible copy/move constructor at all.
+ 
+意思是从C++17开始，如果我们要从一个纯右值拷贝构造或者移动构造一个新的对象，即使拷贝/移动构造函数是delete的，也可以执行copy elision优化。而在C++11/C++14标准下，移动构造函数必须是可见的。
+
+**test25/main3.cc**
+
+```cpp
+#include <iostream>
+
+class A {
+  public:
+      A() {
+          std::cout << "A::A(): object at " << this << " has value: " << a_ << std::endl;
+      };
+
+      explicit A(int a) : a_{a} {
+          std::cout << "A::A(int): object at " << this << " has value: " << a_ << std::endl;
+      }
+
+      ~A() {
+          std::cout << "A::~A(): object at " << this << " has value: " << a_ << std::endl;
+      };
+
+      A(const A&) = delete;
+
+      A(A&&) = delete;
+
+  public:
+      int a_{0};
+};
+
+int main() {
+    A a1 = A(100);
+
+    return 0;
+}
+```
+
+分别用C++11/C++14和C++17/C++20标准进行编译：
+
+**C++11/C++14**
+
+```bash
+$ g++ -o main3 main3.cc  -std=c++11   -fdiagnostics-all-candidates
+main3.cc: In function ‘int main()’:
+main3.cc:26:17: error: use of deleted function ‘A::A(A&&)’
+   26 |     A a1 = A(100);
+      |                 ^
+main3.cc:19:7: note: declared here
+   19 |       A(A&&) = delete;
+      |       ^
+main3.cc:19:7: note: candidate: ‘A::A(A&&)’ (deleted)
+main3.cc:17:7: note: candidate: ‘A::A(const A&)’ (deleted)
+   17 |       A(const A&) = delete;
+      |       ^
+main3.cc:5:7: note: candidate: ‘A::A()’
+    5 |       A() {
+      |       ^
+main3.cc:5:7: note:   candidate expects 0 arguments, 1 provided
+main3.cc:9:16: note: candidate: ‘A::A(int)’ (ignored)
+    9 |       explicit A(int a) : a_{a} {
+      |                ^
+```
+
+**C++17/C++20**
+
+```bash
+$ g++ -o main3 main3.cc  -std=c++17   -fdiagnostics-all-candidates
+$
+$ ./main3
+A::A(int): object at 0x7ffd01f4f5d4 has value: 100
+A::~A(): object at 0x7ffd01f4f5d4 has value: 100
+```
+
+可以看到C++17/C++20不需要拷贝/移动构造函数就能做URVO优化，但C++11/C++14编译时拷贝/移动构造函数必须是可见的，即使URVO优化后实际上并不会实际调用到。
+
+但是，在执行NRVO优化时，C++11/C++14/C++17/C++20/C++23标准下移动构造函数必须是可用的，即使不会实际调用：
+
+**test26/main4.cc**
+
+```cpp
+#include <iostream>
+
+class A {
+  public:
+      A() {
+          std::cout << "A::A(): object at " << this << " has value: " << a_ << std::endl;
+      };
+
+      explicit A(int a) : a_{a} {
+          std::cout << "A::A(int): object at " << this << " has value: " << a_ << std::endl;
+      }
+
+      ~A() {
+          std::cout << "A::~A(): object at " << this << " has value: " << a_ << std::endl;
+      };
+
+      A(const A& rhs) : a_{rhs.a_} {
+          std::printf("A::A(const A&): {lhs : rhs} <==> {%p : %p}\n", this, &rhs);
+      }
+
+      A(A&&) = delete;
+
+
+  public:
+      int a_{0};
+};
+
+A Func(int i) {
+    A a(i * i);
+
+    return a;
+}
+
+int main() {
+    Func(10);
+
+    return 0;
+}
+```
+
+C++20编译：
+
+```bash
+$ g++ -o main4 main4.cc  -std=c++17   -fdiagnostics-all-candidates
+main4.cc: In function ‘A Func(int)’:
+main4.cc:31:12: error: use of deleted function ‘A::A(A&&)’
+   31 |     return a;
+      |            ^
+main4.cc:21:7: note: declared here
+   21 |       A(A&&) = delete;
+      |       ^
+main4.cc:21:7: note: candidate: ‘A::A(A&&)’ (deleted)
+main4.cc:17:7: note: candidate: ‘A::A(const A&)’
+   17 |       A(const A& rhs) : a_{rhs.a_} {
+      |       ^
+main4.cc:5:7: note: candidate: ‘A::A()’
+    5 |       A() {
+      |       ^
+main4.cc:5:7: note:   candidate expects 0 arguments, 1 provided
+main4.cc:9:16: note: candidate: ‘A::A(int)’ (ignored)
+    9 |       explicit A(int a) : a_{a} {
+      |                ^
+```
+
+编译器报错，移动构造函数不可用，尽管这种情况下移动构造过程可以被优化。
+
+同时也可以看到，在这种情况下构造函数重载决议时移动构造函数是比拷贝构造函数更好的匹配。
+
+最后总结一下：
+- C++17以后URVO强制执行，不可关闭。
+- NRVO默认打开，可以关闭。要执行NRVO，移动构造函数必须是可用的，不能delete。
+- 返回一个具名对象时，如果关闭NRVO优化，那么使用移动构造函数是比拷贝构造函数更好的匹配。

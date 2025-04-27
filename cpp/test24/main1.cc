@@ -21,8 +21,9 @@ public:
     }
 private:
     int a_{0};
-    std::shared_ptr<A> next_{nullptr};
+    std::shared_ptr<A> next_;
 };
+
 
 int main() {
     auto a1 = std::make_shared<A>(1);
