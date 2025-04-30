@@ -39,11 +39,21 @@
     - [拷贝构造函数的参数为什么是引用类型？](#%E6%8B%B7%E8%B4%9D%E6%9E%84%E9%80%A0%E5%87%BD%E6%95%B0%E7%9A%84%E5%8F%82%E6%95%B0%E4%B8%BA%E4%BB%80%E4%B9%88%E6%98%AF%E5%BC%95%E7%94%A8%E7%B1%BB%E5%9E%8B)
     - [拷贝构造函数的参数为什么一般是const引用类型？](#%E6%8B%B7%E8%B4%9D%E6%9E%84%E9%80%A0%E5%87%BD%E6%95%B0%E7%9A%84%E5%8F%82%E6%95%B0%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%80%E8%88%AC%E6%98%AFconst%E5%BC%95%E7%94%A8%E7%B1%BB%E5%9E%8B)
     - [是否可以将拷贝构造函数定义为explicit？](#%E6%98%AF%E5%90%A6%E5%8F%AF%E4%BB%A5%E5%B0%86%E6%8B%B7%E8%B4%9D%E6%9E%84%E9%80%A0%E5%87%BD%E6%95%B0%E5%AE%9A%E4%B9%89%E4%B8%BAexplicit)
-        - [-std=c++17无视explicit修饰依然能elide constructor？](#-stdc17%E6%97%A0%E8%A7%86explicit%E4%BF%AE%E9%A5%B0%E4%BE%9D%E7%84%B6%E8%83%BDelide-constructor)
 - [返回值优化](#%E8%BF%94%E5%9B%9E%E5%80%BC%E4%BC%98%E5%8C%96)
     - [强制执行URVO](#%E5%BC%BA%E5%88%B6%E6%89%A7%E8%A1%8Curvo)
     - [NRVO](#nrvo)
     - [纯右值语义](#%E7%BA%AF%E5%8F%B3%E5%80%BC%E8%AF%AD%E4%B9%89)
+- [析构函数](#%E6%9E%90%E6%9E%84%E5%87%BD%E6%95%B0)
+    - [析构函数的执行顺序](#%E6%9E%90%E6%9E%84%E5%87%BD%E6%95%B0%E7%9A%84%E6%89%A7%E8%A1%8C%E9%A1%BA%E5%BA%8F)
+- [三/五法则](#%E4%B8%89%E4%BA%94%E6%B3%95%E5%88%99)
+- [delete](#delete)
+    - [引导函数重载决议](#%E5%BC%95%E5%AF%BC%E5%87%BD%E6%95%B0%E9%87%8D%E8%BD%BD%E5%86%B3%E8%AE%AE)
+    - [阻止拷贝](#%E9%98%BB%E6%AD%A2%E6%8B%B7%E8%B4%9D)
+    - [删除的析构函数](#%E5%88%A0%E9%99%A4%E7%9A%84%E6%9E%90%E6%9E%84%E5%87%BD%E6%95%B0)
+    - [与default的区别](#%E4%B8%8Edefault%E7%9A%84%E5%8C%BA%E5%88%AB)
+- [合成的拷贝控制成员可能是删除的](#%E5%90%88%E6%88%90%E7%9A%84%E6%8B%B7%E8%B4%9D%E6%8E%A7%E5%88%B6%E6%88%90%E5%91%98%E5%8F%AF%E8%83%BD%E6%98%AF%E5%88%A0%E9%99%A4%E7%9A%84)
+- [引用限定符](#%E5%BC%95%E7%94%A8%E9%99%90%E5%AE%9A%E7%AC%A6)
+- [重载运算与类型转换](#%E9%87%8D%E8%BD%BD%E8%BF%90%E7%AE%97%E4%B8%8E%E7%B1%BB%E5%9E%8B%E8%BD%AC%E6%8D%A2)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -2470,7 +2480,7 @@ main3.cc:17:12: note:   initializing argument 1 of ‘A::A(A&)’
       |         ~~~^~~
 ```
 
-并且报错的地方与C++11还不同，是在**A nonymous = a**也就是**return a**语句报错。原因是从C++23开始，**return a**是一个**move -eligible expression**:
+并且报错的地方与C++11还不同，是在**A nonymous = a**也就是**return a**语句报错。原因是从C++23开始，**return a**是一个**move-eligible expression**:
 
 **Move-eligible expressions:**
 
@@ -2492,8 +2502,8 @@ rvalue (since C++23) for the purpose of overload resolution (thus it may select 
 
 语法上没有问题，但这样做的后果就是类没法进行拷贝初始化，只能直接初始化。从这个例子我们看出直接初始化和拷贝初始化的明显区别。
 
+**test25/main4.cc**
 ```cpp
-// test4
 #include <iostream>
 
 class A {
@@ -2506,13 +2516,16 @@ class A {
           std::cout << "A::A(int): object at " << this << " has value: " << a_ << std::endl;
       }
 
-      explicit A(const A& rhs) {
-          a_ = rhs.a_;
-          std::cout << "A::A(A&): object at " << this << " has value: " << a_ << std::endl;
+      explicit A(const A& rhs)  : a_{rhs.a_} {
+          std::cout << "A::A(const A&): object at " << this << " has value: " << a_ << std::endl;
       }
   public:
       int a_{0};
 };
+
+void F(A a) {
+    std::cout << "xxx" << std::endl;
+}
 
 
 int main() {
@@ -2526,100 +2539,80 @@ int main() {
     // 隐式调用它，那么在函数决议时就找不到可用函数，于是调用
     // 失败
     A a3 = a2;
+    F(a2);
 
     return 0;
 }
 ```
 
-c++20和c++11标准都会报错：
+这段代码在各个标准下都会报错：
 
 ```bash
-$ g++ main.cc  -std=c++11 -felide-constructors
-main.cc: In function ‘int main()’:
-main.cc:32:12: error: no matching function for call to ‘A::A(A&)’
-   32 |     A a3 = a2;
+$ g++ -o main4 main4.cc  -std=c++11 -fdiagnostics-all-candidates
+main4.cc: In function ‘int main()’:
+main4.cc:35:12: error: no matching function for call to ‘A::A(A&)’
+   35 |     A a3 = a2;
       |            ^~
-main.cc:5:7: note: candidate: ‘A::A()’
+main4.cc:5:7: note: candidate: ‘A::A()’
     5 |       A() {
       |       ^
-main.cc:5:7: note:   candidate expects 0 arguments, 1 provided
-$
-$ g++ main.cc  -std=c++20
-main.cc: In function ‘int main()’:
-main.cc:32:12: error: no matching function for call to ‘A::A(A&)’
-   32 |     A a3 = a2;
-      |            ^~
-main.cc:5:7: note: candidate: ‘A::A()’
-    5 |       A() {
-      |       ^
-main.cc:5:7: note:   candidate expects 0 arguments, 1 provided
-
-```
-
-### -std=c++17无视explicit修饰依然能elide constructor？
-
-```cpp
-// test5
-#include <iostream>
-
-class A {
-  public:
-      A() {
-          std::cout << "A::A(): object at " << this << " has value: " << a_ << std::endl;
-      };
-
-      explicit A(int a) : a_{a} {
-          std::cout << "A::A(int): object at " << this << " has value: " << a_ << std::endl;
-      }
-
-      explicit A(const A& rhs) {
-          a_ = rhs.a_;
-          std::cout << "A::A(const A&): object at " << this << " has value: " << a_ << std::endl;
-      }
-  public:
-      int a_{0};
-};
-
-
-int main() {
-    A a1{10};
-
-    // 正确，直接初始化，由用户显式调用拷贝构造函数
-    A a2(a1);
-
-    // 这里我们先显式构造一个临时对象A(a2)，这是没有问题的，然后用这个临时对象隐式
-    // 调用拷贝构造函数。按道理来说是不行的，所以即使我们使用elide constructor优化
-    // 那么对于-std=C++11, 还是会编译报错，因为此时编译器需要检查这个拷贝构造函数是
-    // 可用的，但显然它是explicit的，并不可用。
-    //
-    // 而对于-std=c++17或者-std=c++20，这种写法并没有问题，也就是c++17和c++20强制使用
-    // elide constructor, 而不管拷贝构造函数此时是否是explicit。
-    A a3 = A(a2);
-
-    return 0;
-}
-```
-
-编译：
-
-```bash
-$ g++ main.cc  -std=c++11
-main.cc: In function ‘int main()’:
-main.cc:35:16: error: no matching function for call to ‘A::A(A)’
-   35 |     A a3 = A(a2);
+main4.cc:5:7: note:   candidate expects 0 arguments, 1 provided
+main4.cc:13:16: note: candidate: ‘A::A(const A&)’ (ignored)
+   13 |       explicit A(const A& rhs)  : a_{rhs.a_} {
       |                ^
-main.cc:5:7: note: candidate: ‘A::A()’
+main4.cc:9:16: note: candidate: ‘A::A(int)’ (ignored)
+    9 |       explicit A(int a) : a_{a} {
+      |                ^
+main4.cc:36:6: error: no matching function for call to ‘A::A(A&)’
+   36 |     F(a2);
+      |     ~^~~~
+main4.cc:5:7: note: candidate: ‘A::A()’
     5 |       A() {
       |       ^
-main.cc:5:7: note:   candidate expects 0 arguments, 1 provided
-
-
-$ g++ main.cc  -std=c++17
-$ ./a.out
-A::A(int): object at 0x7ffe2d4fb12c has value: 10
-A::A(const A&): object at 0x7ffe2d4fb130 has value: 10
-A::A(const A&): object at 0x7ffe2d4fb134 has value: 10
+main4.cc:5:7: note:   candidate expects 0 arguments, 1 provided
+main4.cc:13:16: note: candidate: ‘A::A(const A&)’ (ignored)
+   13 |       explicit A(const A& rhs)  : a_{rhs.a_} {
+      |                ^
+main4.cc:9:16: note: candidate: ‘A::A(int)’ (ignored)
+    9 |       explicit A(int a) : a_{a} {
+      |                ^
+main4.cc:20:10: note:   initializing argument 1 of ‘void F(A)’
+   20 | void F(A a) {
+      |        ~~^
+$ g++ -o main4 main4.cc  -std=c++23 -fdiagnostics-all-candidates
+main4.cc: In function ‘int main()’:
+main4.cc:35:12: error: no matching function for call to ‘A::A(A&)’
+   35 |     A a3 = a2;
+      |            ^~
+main4.cc:5:7: note: candidate: ‘A::A()’
+    5 |       A() {
+      |       ^
+main4.cc:5:7: note:   candidate expects 0 arguments, 1 provided
+main4.cc:13:16: note: candidate: ‘A::A(const A&)’ (ignored)
+   13 |       explicit A(const A& rhs)  : a_{rhs.a_} {
+      |                ^
+main4.cc:9:16: note: candidate: ‘A::A(int)’ (ignored)
+    9 |       explicit A(int a) : a_{a} {
+      |                ^
+main4.cc:36:6: error: no matching function for call to ‘A::A(A&)’
+   36 |     F(a2);
+      |     ~^~~~
+main4.cc:5:7: note: candidate: ‘A::A()’
+    5 |       A() {
+      |       ^
+main4.cc:5:7: note:   candidate expects 0 arguments, 1 provided
+main4.cc:13:16: note: candidate: ‘A::A(const A&)’ (ignored)
+   13 |       explicit A(const A& rhs)  : a_{rhs.a_} {
+      |                ^
+main4.cc:9:16: note: candidate: ‘A::A(int)’ (ignored)
+    9 |       explicit A(int a) : a_{a} {
+      |                ^
+main4.cc:20:10: note:   initializing argument 1 of ‘void F(A)’
+   20 | void F(A a) {
+      |        ~~^
 ```
+
+可以看到explicit的拷贝构造函数在重载决议时被标记为ignored。
 
 # 返回值优化
 
@@ -2956,3 +2949,436 @@ main4.cc:9:16: note: candidate: ‘A::A(int)’ (ignored)
 - C++17以后URVO强制执行，不可关闭。
 - NRVO默认打开，可以关闭。要执行NRVO，移动构造函数必须是可用的，不能delete。
 - 返回一个具名对象时，如果关闭NRVO优化，那么使用移动构造函数是比拷贝构造函数更好的匹配。
+
+# 析构函数
+
+析构函数是类的一个成员函数，名字由波浪号接类名构成。它没有返回值，也不接受参数。由于析构函数不接受参数，因此它不能被重载。对一个给定类，它只有一个析构函数。
+
+
+当一个类未定义自己的析构函数时，编译器会为它定义一个**合成析构函数**。
+
+
+## 析构函数的执行顺序
+
+在一个析构函数中，首先执行函数体，然后销毁成员，成员按初始化顺序的**逆序销毁**
+
+- 函数体
+- 析构部分
+
+**test27/main.cc**
+
+```cpp
+#include <iostream>
+
+
+struct A {
+    A() {
+        std::cout << "A::A() contructs A @" << this << std::endl;
+    }
+
+    ~A() {
+        std::cout << "A::~A() destructs A @" << this << std::endl;
+    }
+};
+
+struct B {
+    B() {
+        std::cout << "B::B() contructs B @" << this << std::endl;
+    }
+
+    ~B() {
+        std::cout << "B::~B() destructs B @" << this << std::endl;
+    }
+};
+
+struct C {
+    C() {
+        std::cout << "C::C() contructs C @" << this << std::endl;
+    }
+
+    ~C() {
+        std::cout << "C::~C() destructs C @" << this << std::endl;
+    }
+};
+
+class D {
+public:
+    D() {
+        std::cout << "D::D() contructs D @" << this << std::endl;
+    }
+
+    ~D() {
+        std::cout << "D::~D() destructs D @" << this << std::endl;
+    }
+private:
+    A a_;
+    B b_;
+    C c_;
+};
+
+
+
+int main() {
+    D d;
+
+
+    return 0;
+}
+```
+
+编译并运行：
+```bahs
+$ g++ main.cc
+$
+$
+$ ./a.out
+A::A() contructs A @0x7ffed65c1c85
+B::B() contructs B @0x7ffed65c1c86
+C::C() contructs C @0x7ffed65c1c87
+D::D() contructs D @0x7ffed65c1c85
+D::~D() destructs D @0x7ffed65c1c85
+C::~C() destructs C @0x7ffed65c1c87
+B::~B() destructs B @0x7ffed65c1c86
+A::~A() destructs A @0x7ffed65c1c85
+```
+
+按声明顺序构造对象D的成员:
+```bash
+A -> B -> C
+```
+
+按声明顺序的逆序销毁对象D的成员:
+```bash
+C -> B -> A
+```
+
+认识到析构函数体自身并不直接销毁成员是非常重要的。成员是在析构函数体之后隐含的的析构阶段中被销毁的。在整个对象的销毁过程中，析构函数体是作为成员销毁步骤之外的另一部分而进行的。
+
+
+# 三/五法则
+
+- 需要析构函数的类也需要拷贝和赋值操作
+- 需要拷贝操作的类也需要赋值操作，反之亦然
+
+# delete
+
+delete可以用于声明**成员函数**和**非成员函数**，它表示我们希望在代码中明确禁止这个函数所能实现的操作。
+
+
+## 引导函数重载决议
+
+**test28/main1.cc**
+
+```cpp
+#include <iostream>
+
+// 定义重载的Foo函数
+
+void Foo(int) = delete;
+
+void Foo(double) {
+    std::cout << "Foo(double)" << std::endl;
+}
+
+int main() {
+    Foo(10.0);
+
+    // 重载决议将会匹配到void Foo(int) 版本
+    Foo('c');
+
+    return 0;
+}
+```
+
+编译报错：
+```bash
+$ g++ main1.cc   -fdiagnostics-all-candidates
+main1.cc: In function ‘int main()’:
+main1.cc:15:8: error: use of deleted function ‘void Foo(int)’
+   15 |     Foo('c');
+      |     ~~~^~~~~
+main1.cc:5:6: note: declared here
+    5 | void Foo(int) = delete;
+      |      ^~~
+main1.cc:5:6: note: candidate: ‘void Foo(int)’ (deleted)
+main1.cc:7:6: note: candidate: ‘void Foo(double)’
+    7 | void Foo(double) {
+      |      ^~~
+```
+
+可以看到delete的函数也在重载函数决议的候选集合中，并且因为是更好的匹配选择了void Foo(int)版本，但因为我们把这个函数定义为delete，导致函数不可用编译报错，这样给代码提供了更严格的类型检查。所以如果我们希望用户明确的传入double类型的参数来调用void Foo(double)，就可以将void Foo(int) 定义为删除的。
+
+## 阻止拷贝
+
+可以通过将拷贝构造函数和拷贝赋值运算符定义为删除的函数来阻止拷贝。比如iostream类不需要拷贝构造函数和拷贝赋值运算符。
+
+**test28/main2.cc**
+
+```cpp
+#include <iostream>
+
+struct NoCopy {
+    NoCopy() = default;
+    ~NoCopy() = default;
+
+    NoCopy(const NoCopy&) = delete;
+    NoCopy& operator=(const NoCopy&) = delete;
+};
+
+int main() {
+    NoCopy o1;
+
+    NoCopy o2(o1);
+
+    return 0;
+}
+```
+
+编译报错：
+
+```bash
+$ g++ main.cc
+main.cc: In function ‘int main()’:
+main.cc:15:17: error: use of deleted function ‘NoCopy::NoCopy(const NoCopy&)’
+   15 |     NoCopy o2(o1);
+      |                 ^
+main.cc:8:5: note: declared here
+    8 |     NoCopy(const NoCopy&) = delete;
+      |     ^~~~~~
+```
+
+## 删除的析构函数
+
+将析构函数定义为delete并没有什么语法错误，只是这样的一个对象在销毁时会调用析构函数，而这个析构函数又是delete的，编译器不会让我们调用它，于是就报错了，那么是不是说只要不销毁这个对象就可以了呢？确实，所以我们可以new一个这样的对象，但又不delete它。
+
+**test28/main3.cc**
+
+```cpp
+#include <iostream>
+
+struct NoDtor {
+    NoDtor() = default;
+    ~NoDtor() = delete;
+
+    NoDtor(const NoDtor&) = delete;
+    NoDtor& operator=(const NoDtor&) = delete;
+};
+
+int main() {
+    NoDtor o1;
+
+    auto p = new NoDtor;
+
+    return 0;
+}
+```
+
+编译报错：
+
+```bash
+$ g++ main.cc
+main.cc: In function ‘int main()’:
+main.cc:13:12: error: use of deleted function ‘NoDtor::~NoDtor()’
+   13 |     NoDtor o1;
+      |            ^~
+main.cc:6:5: note: declared here
+    6 |     ~NoDtor() = delete;
+      |     ^
+```
+
+报错也只是因为试图销毁局部对象，new出来的对象没人delete，就不会调用到析构函数，也不会报错。
+
+## 与default的区别
+
+=delete必须出现在函数第一次声明的时候。
+
+**test28/main4.cc**
+
+```cpp
+#include <iostream>
+
+struct NoDtor {
+    NoDtor();
+    ~NoDtor();
+
+    NoDtor(const NoDtor&);
+    NoDtor& operator=(const NoDtor&);
+};
+
+NoDtor::NoDtor() = default;
+NoDtor::~NoDtor() = delete;
+NoDtor::NoDtor(const NoDtor&) = delete;
+NoDtor& NoDtor::operator=(const NoDtor&) = delete;
+
+int main() {
+    auto p = new NoDtor;
+
+    return 0;
+}
+```
+
+将=delete放在成员函数定义的时候，用g++编译发现并不报错:
+```bash
+$ g++ main4.cc  -std=c++23
+main4.cc:10:1: warning: deleted definition of ‘NoDtor::~NoDtor()’ is not first declaration
+   10 | NoDtor::~NoDtor() = delete;
+      | ^~~~~~
+main4.cc:3:5: note: previous declaration of ‘NoDtor::~NoDtor()’
+    3 |     ~NoDtor();
+      |     ^
+main4.cc:11:1: warning: deleted definition of ‘NoDtor::NoDtor(const NoDtor&)’ is not first declaration
+   11 | NoDtor::NoDtor(const NoDtor&) = delete;
+      | ^~~~~~
+main4.cc:5:5: note: previous declaration of ‘NoDtor::NoDtor(const NoDtor&)’
+    5 |     NoDtor(const NoDtor&);
+      |     ^~~~~~
+main4.cc:12:9: warning: deleted definition of ‘NoDtor& NoDtor::operator=(const NoDtor&)’ is not first declaration
+   12 | NoDtor& NoDtor::operator=(const NoDtor&) = delete;
+      |         ^~~~~~
+main4.cc:6:13: note: previous declaration of ‘NoDtor& NoDtor::operator=(const NoDtor&)’
+    6 |     NoDtor& operator=(const NoDtor&);
+      |             ^~~~~~~~
+```
+
+但是clang++会明确报错：
+
+```cpp
+$ clang++-19  main4.cc
+main4.cc:10:21: error: deleted definition must be first declaration
+   10 | NoDtor::~NoDtor() = delete;
+      |                     ^
+main4.cc:3:5: note: previous declaration is here
+    3 |     ~NoDtor();
+      |     ^
+main4.cc:11:33: error: deleted definition must be first declaration
+   11 | NoDtor::NoDtor(const NoDtor&) = delete;
+      |                                 ^
+main4.cc:5:5: note: previous declaration is here
+    5 |     NoDtor(const NoDtor&);
+      |     ^
+main4.cc:12:44: error: deleted definition must be first declaration
+   12 | NoDtor& NoDtor::operator=(const NoDtor&) = delete;
+      |                                            ^
+main4.cc:6:13: note: previous declaration is here
+    6 |     NoDtor& operator=(const NoDtor&);
+      |             ^
+3 errors generated.
+```
+
+
+任意函数都可以声明为=delete, 但只有编译器可以合成的函数可以定义为=default。
+
+# 合成的拷贝控制成员可能是删除的
+
+如果一个类有数据成员不能默认构造、拷贝、复制或销毁，则对应的成员函数将被定义为删除的。
+
+**test29/main1.cc**
+
+```cpp
+#include <iostream>
+
+class A {
+public:
+    A() = default;
+    A(int a, int b) : a_{a}, N{b} {
+        std::cout << "A::A(int, int)" << std::endl;
+    }
+
+    A(const A&) = default;
+    A& operator=(const A&) = default;
+
+private:
+    int a_ = 10;
+    const int N = 100;
+};
+
+int main() {
+    A a1(10, 100);
+
+    A a2;
+
+    a2 = a1;
+
+    return 0;
+}
+```
+
+不能通过编译，因为A有一个const成员，那么它的合成拷贝赋值运算符被定义为delete的：
+
+```bash
+$ g++ -o main1 main1.cc
+main1.cc: In function ‘int main()’:
+main1.cc:23:10: error: use of deleted function ‘A& A::operator=(const A&)’
+   23 |     a2 = a1;
+      |          ^~
+main1.cc:11:8: note: ‘A& A::operator=(const A&)’ is implicitly deleted because the default definition would be ill-formed:
+   11 |     A& operator=(const A&) = default;
+      |        ^~~~~~~~
+main1.cc: At global scope:
+main1.cc:11:8: error: non-static const member ‘const int A::N’, cannot use default assignment operator
+```
+
+**test29/main2.cc**
+
+```cpp
+#include <iostream>
+
+class A {
+public:
+    A() = default;
+    A(int a, int b) : a_{a}, b_{b} {
+        std::cout << "A::A(int, int)" << std::endl;
+    }
+
+    A(const A&) = default;
+    A& operator=(const A&) = default;
+
+private:
+    int a_ = 10;
+    int &b_;
+};
+
+int main() {
+    A a1;
+
+    return 0;
+}
+```
+
+不能通过编译，因为A有一个引用成员，且没有默认初始化器，则它的默认构造函数被定义为delete的：
+
+```bash
+$ g++ -o main2 main2.cc
+main2.cc: In function ‘int main()’:
+main2.cc:19:7: error: use of deleted function ‘A::A()’
+   19 |     A a1;
+      |       ^~
+main2.cc:5:5: note: ‘A::A()’ is implicitly deleted because the default definition would be ill-formed:
+    5 |     A() = default;
+      |     ^
+main2.cc: At global scope:
+main2.cc:5:5: error: uninitialized reference member in ‘class A’
+main2.cc:15:10: note: ‘int& A::b_’ should be initialized
+   15 |     int &b_;
+      |          ^~
+main2.cc: In function ‘int main()’:
+main2.cc:19:7: note: use ‘-fdiagnostics-all-candidates’ to display considered candidates
+   19 |     A a1;
+      |       ^~
+```
+
+# 引用限定符
+
+引用限定符可以是&或者&&，分别指出this可以指向一个左值或者右值。类似const限定符，引用限定符只能用于(非static)成员函数，且必须同时出现在函数的声明和定义中。
+
+如果一个成员函数有引用限定符，则具有相同参数列表的所有版本都必须有引用限定符。
+
+# 重载运算与类型转换
+
+如果一个运算符函数是成员函数，则它的第一个(左侧)运算对象绑定到隐式的this指针。
+
+- 赋值(=)、下标([])、调用(())和成员访问箭头(->)运算符必须是成员。
+- 复合赋值运算符一般来说应该是成员，但并非必须，这一点与赋值运算符略有不同。
+- 改变对象状态的运算符或者与给定类型密切相关的运算符，如递增、递减和解引用运算符，通常应该是成员。
+- 具有对称性的运算符可能转换任意一端的运算对象，例如算术、相等性、关系和位运算符，因此它们通常应该是普通的非成员函数。
+

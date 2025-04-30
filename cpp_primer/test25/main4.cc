@@ -10,9 +10,8 @@ class A {
           std::cout << "A::A(int): object at " << this << " has value: " << a_ << std::endl;
       }
 
-      explicit A(const A& rhs) {
-          a_ = rhs.a_;
-          std::cout << "A::A(A&): object at " << this << " has value: " << a_ << std::endl;
+      explicit A(const A& rhs)  : a_{rhs.a_} {
+          std::cout << "A::A(const A&): object at " << this << " has value: " << a_ << std::endl;
       }
   public:
       int a_{0};
