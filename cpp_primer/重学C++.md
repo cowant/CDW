@@ -54,6 +54,20 @@
 - [合成的拷贝控制成员可能是删除的](#%E5%90%88%E6%88%90%E7%9A%84%E6%8B%B7%E8%B4%9D%E6%8E%A7%E5%88%B6%E6%88%90%E5%91%98%E5%8F%AF%E8%83%BD%E6%98%AF%E5%88%A0%E9%99%A4%E7%9A%84)
 - [引用限定符](#%E5%BC%95%E7%94%A8%E9%99%90%E5%AE%9A%E7%AC%A6)
 - [重载运算与类型转换](#%E9%87%8D%E8%BD%BD%E8%BF%90%E7%AE%97%E4%B8%8E%E7%B1%BB%E5%9E%8B%E8%BD%AC%E6%8D%A2)
+    - [输入输出运算符](#%E8%BE%93%E5%85%A5%E8%BE%93%E5%87%BA%E8%BF%90%E7%AE%97%E7%AC%A6)
+        - [输入输出运算符必须是非成员函数](#%E8%BE%93%E5%85%A5%E8%BE%93%E5%87%BA%E8%BF%90%E7%AE%97%E7%AC%A6%E5%BF%85%E9%A1%BB%E6%98%AF%E9%9D%9E%E6%88%90%E5%91%98%E5%87%BD%E6%95%B0)
+    - [算术和关系运算符](#%E7%AE%97%E6%9C%AF%E5%92%8C%E5%85%B3%E7%B3%BB%E8%BF%90%E7%AE%97%E7%AC%A6)
+        - [相等运算符](#%E7%9B%B8%E7%AD%89%E8%BF%90%E7%AE%97%E7%AC%A6)
+        - [关系运算符](#%E5%85%B3%E7%B3%BB%E8%BF%90%E7%AE%97%E7%AC%A6)
+    - [赋值运算符](#%E8%B5%8B%E5%80%BC%E8%BF%90%E7%AE%97%E7%AC%A6)
+    - [复合赋值运算符](#%E5%A4%8D%E5%90%88%E8%B5%8B%E5%80%BC%E8%BF%90%E7%AE%97%E7%AC%A6)
+    - [下标运算符](#%E4%B8%8B%E6%A0%87%E8%BF%90%E7%AE%97%E7%AC%A6)
+    - [递增和递减运算符](#%E9%80%92%E5%A2%9E%E5%92%8C%E9%80%92%E5%87%8F%E8%BF%90%E7%AE%97%E7%AC%A6)
+    - [成员访问运算符](#%E6%88%90%E5%91%98%E8%AE%BF%E9%97%AE%E8%BF%90%E7%AE%97%E7%AC%A6)
+- [第15章 面向对象程序设计](#%E7%AC%AC15%E7%AB%A0-%E9%9D%A2%E5%90%91%E5%AF%B9%E8%B1%A1%E7%A8%8B%E5%BA%8F%E8%AE%BE%E8%AE%A1)
+    - [访问说明符](#%E8%AE%BF%E9%97%AE%E8%AF%B4%E6%98%8E%E7%AC%A6)
+        - [类派生列表中的访问说明符](#%E7%B1%BB%E6%B4%BE%E7%94%9F%E5%88%97%E8%A1%A8%E4%B8%AD%E7%9A%84%E8%AE%BF%E9%97%AE%E8%AF%B4%E6%98%8E%E7%AC%A6)
+    - [派生类构造函数](#%E6%B4%BE%E7%94%9F%E7%B1%BB%E6%9E%84%E9%80%A0%E5%87%BD%E6%95%B0)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -2496,7 +2510,7 @@ If an expression is move-eligible, it is treated either as an rvalue or as an lv
 rvalue (since C++23) for the purpose of overload resolution (thus it may select the move constructor).
 ```
 
-也就是说，对于C++23，**return a**是一个右值表达式(C++11/C++14/C++17/C++20都是左值表达式)，虽然也可以执行NRVO优化，但由于NRVO要求拷贝构造函数/移动构造函数可见且能正确执行，经过重载决议后发现拷贝构造函数的形参是非const引用，不能绑定到右值，于是对**return a**语句报错。
+也就是说，对于C++23，**return a**是一个右值表达式(C++11/C++14/C++17/C++20都是左值表达式)，虽然也可以执行NRVO优化，但由于NRVO要求拷贝构造函数/移动构造函数可见且能正确执行，经过重载决议后发现拷贝构造函数的形参是非const引用，不能绑定到右值，于是对**return a**语句报错。而在C++11/C++14/C++17/C++20，**return a**都是一个左值，可以绑定到非const引用，所以不会报错。
 
 ## 是否可以将拷贝构造函数定义为explicit？
 
@@ -3381,4 +3395,313 @@ main2.cc:19:7: note: use ‘-fdiagnostics-all-candidates’ to display considere
 - 复合赋值运算符一般来说应该是成员，但并非必须，这一点与赋值运算符略有不同。
 - 改变对象状态的运算符或者与给定类型密切相关的运算符，如递增、递减和解引用运算符，通常应该是成员。
 - 具有对称性的运算符可能转换任意一端的运算对象，例如算术、相等性、关系和位运算符，因此它们通常应该是普通的非成员函数。
+
+## 输入输出运算符
+
+IO标准库分别使用>>和<<执行输入输出操作。IO库定义了用其读写内置类型的版本，而类型则需要自定义适合其对象的新版本以支持IO操作。
+
+### 输入输出运算符必须是非成员函数
+
+与iostream标准库兼容的输入输出运算符必须是普通的非成员函数，而不能是类的成员函数。否则，它们的左侧运算对象将是我们的类的一个对象。
+
+iostream库输出运算符的使用形式如下：
+```cpp
+cout << arg1 << arg2;
+```
+
+如果类重载的输出运算符是成员函数，那么输出运算符的第一个运算对象是类的对象，第二个运算对象是非常量ostream对象的引用。
+
+```cpp
+A a;
+a << cout;
+```
+
+这就与iostream标准库的输出运算符的用法不兼容，所以输入输出运算符应该重载为非成员函数。
+
+## 算术和关系运算符
+
+通常情况下，我们把算术和关系运算符定义成非成员函数以允许对左侧或右侧的运算对象进行转换。因为这些运算符一般不需要改变运算对象的状态，所以形参都是常量的引用。
+
+### 相等运算符
+
+### 关系运算符
+
+## 赋值运算符
+
+赋值运算符必须是类的成员函数。
+
+## 复合赋值运算符
+
+复合赋值运算符通常情况下也应该是类的成员函数，赋值运算符和复合赋值运算符都应该返回左侧运算对象的引用。
+
+## 下标运算符
+
+必须是成员函数。如果一个类包括下标运算符，则它通常会定义两个版本
+- 一个是返回普通引用
+- 另一个是类的常量成员并且返回常量引用。
+
+## 递增和递减运算符
+
+在迭代器类中通常会实现递增运算符(++)和递减运算符(--)，这两种运算符使得类可以在元素的序列中前后移动。C++语言并不要求递增和递减运算符必须是类的成员，但是因为它们改变的正好是说操作对象的状态，所以建议将其设定为成员函数。
+
+定义递增和递减运算符的类应该同时定义前置和后置版本。这些运算符通常应该被定义成类的成员。
+
+**为了与内置版本保持一致，前置运算符应该返回递增或递减后对象的引用。**
+
+**为了与内置版本一致，后置运算符应该返回对象的原值(递增或递减之前的值)，返回的形式是一个值而非引用。**
+```cpp
+class T {
+    T& operator++();
+    T& operator--();
+
+    T operator++(int);
+    T operator--(int);
+};
+```
+
+## 成员访问运算符
+
+- 解引用运算符(*)
+- 箭头运算符(->)
+
+箭头运算符必须是类的成员。解引用运算符通常也是类的成员，尽管并非必须如此。
+
+重载的箭头运算符必须返回类的指针或者自定义了箭头运算符的某个类的对象。
+
+对于形如point->mem的表达式来说，point必须是指向类对象的指针或者是一个重载了operator->的类的对象。根据point类型的不同，point->mem分别等价于
+```cpp
+(*point).mem; // point是一个内置的指针类型
+point.operator()->mem; // point是类的一个对象, 这里没懂，为啥不是point.operator->()->mem;
+```
+
+point->mem的执行过程如下所示：
+- 如果point是指针，则应用内置的箭头运算符，表达式等价于(*point).mem。
+- 如果point是定义了operator->的类的一个对象，则使用point.operator->()的结果来获取mem。其中，如果该结果是一个指针，则执行第一步；如果该结果本身含有重载的operator->()，则重复调用当前步骤。
+
+**test30/main.cc**
+```cpp
+#include <iostream>
+using namespace std;
+
+class A {
+public:
+    void action() {
+        cout << "Action in class A!" << endl;
+    }
+};
+
+class B {
+public:
+    A* operator->() {
+        return &a;
+    }
+    void action() {
+        cout << "Action in class B!" << endl;
+    }
+private:
+    A a;
+};
+
+class C {
+public:
+    B operator->() {
+        return b;
+    }
+    void action() {
+        cout << "Action in class C!" << endl;
+    }
+private:
+    B b;
+};
+
+
+int main() {
+    C* pc = new C;
+    pc->action();
+
+    C c;
+    c->action();
+
+    return 0;
+}
+```
+
+编译并运行：
+```bash
+$ g++ main.cc
+$ ./a.out
+Action in class C!
+Action in class A!
+```
+
+其中的代码
+```cpp
+C* pc = new C;
+pc->action();
+```
+输出的结果是
+```bash
+Action in class C!
+```
+
+这个结果比较好理解，pc是类对象指针，此时的箭头操作符使用的是内置含义，对pc解引用然后调用对象的成员函数action。
+
+而下面的代码
+```cpp
+C c;
+c->action();
+```
+
+输出的结果是
+```bash
+Action in class A!
+```
+
+其实c->action()的含义与c.operator->().operator->()->action()相同。
+
+c是对象，c后面的箭头操作符使用的是重载箭头操作符，即调用类C的operator->()成员函数。此时返回的是类B的对象，所以调用类B的operator->()成员函数，B的operator->()返回的是指针，所以现在可以使用内置箭头操作符了。
+
+对B的operator->()返回的指针进行解引用，然后调用解引用后的对象的成员函数action，此时调用的就是类A的action()。
+
+这里存在一个递归调用operator->()的过程，最后再使用一次内置含义的箭头操作符。
+
+
+# 第15章 面向对象程序设计
+
+
+## 访问说明符
+
+### 类派生列表中的访问说明符
+
+类派生列表的形式是：首先是一个冒号，后面紧跟以逗号分隔的基类列表，其中每个基类前面可以有以下三种访问说明符中的一种：
+
+- public
+- protected
+- private
+
+这里访问说明符的作用是控制派生类从基类继承而来的成员是否对**派生类的用户**可见。
+
+
+如果一个派生类是公有的，则基类的公有成员也是派生类接口的组成部分。此外，我们能将公有派生类型的对象绑定到基类的引用或指针上。因为我们在派生列表中使用了public访问说明符。
+
+**test31/main1.cc**
+
+```cpp
+#include <iostream>
+
+class B {
+
+};
+
+class D : protected B {
+
+};
+
+int main() {
+    D d;
+
+    B& b = d;
+
+    return 0;
+}
+```
+
+在这个例子中，我们使用了protected访问说明符，那么基类对于派生类的用户而言就是不可见的。如果派生类对象可以绑定到基类的引用上，那就意味着我们通过这个引用可以访问到派生类中的基类部分，这就失去了protected的保护作用。所以编译器会阻止这种绑定。
+
+```bash
+$ g++ main1.cc
+main1.cc: In function ‘int main()’:
+main1.cc:14:12: error: ‘B’ is an inaccessible base of ‘D’
+   14 |     B& b = d;
+      |            ^
+```
+
+**test31/main2.cc**
+
+```cpp
+#include <iostream>
+
+class B {
+public:
+    B() = default;
+    B(int i) : a_{i} {}
+    virtual ~B() = default;
+    void Addr() const {
+        std::cout << "object @ " << this << std::endl;
+    }
+private:
+    int a_{10};
+};
+
+class D : protected B {
+public:
+    D() = default;
+    D(int i) : B(i), b_{i} {}
+    ~D() = default;
+private:
+    int b_{100};
+};
+
+int main() {
+    auto p = new D(10000);
+
+    p->Addr();
+
+    return 0;
+}
+```
+
+编译报错：
+```bash
+$ g++ main2.cc
+main2.cc: In function ‘int main()’:
+main2.cc:27:12: error: ‘void B::Addr() const’ is inaccessible within this context
+   27 |     p->Addr();
+      |     ~~~~~~~^~
+main2.cc:8:10: note: declared here
+    8 |     void Addr() const {
+      |          ^~~~
+main2.cc:27:12: error: ‘B’ is not an accessible base of ‘D’
+   27 |     p->Addr();
+      |     ~~~~~~~^~
+```
+
+当使用protected继承时，基类的public成员函数对派生类的用户也是不可见的。
+
+## 派生类构造函数
+
+派生类对象不能直接初始化基类的成员。尽管从语法上来说我们可以在**派生类构造函数体内**给它的公有或受保护的基类成员赋值，但是最好不要这么做。和使用基类的其他场合一样，派生类应该遵循基类的接口，并且**通过基类的构造函数来初始化那些从基类继承而来的成员**。
+
+**test32/main.cc**
+
+```cpp
+#include <iostream>
+
+struct B {
+    int a_{0};
+};
+
+struct D : B {
+    D(int a, const std::string &s) : a_{a}, name_{s} {}
+    std::string name_;
+};
+
+int main() {
+    D d(12, "hello");
+
+    return 0;
+}
+```
+
+如果通过派生类列表直接初始化基类的成员，编译会报错：
+
+```bash
+$ g++ main.cc
+main.cc: In constructor ‘D::D(int, const string&)’:
+main.cc:8:38: error: class ‘D’ does not have any field named ‘a_’
+    8 |     D(int a, const std::string &s) : a_{a}, name_{s} {}
+      |                                      ^~
+```
+
+派生类初始化时先初始化基类的部分，然后按照声明的顺序依次初始化派生类的成员。
 
