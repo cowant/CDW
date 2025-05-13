@@ -68,6 +68,13 @@
     - [访问说明符](#%E8%AE%BF%E9%97%AE%E8%AF%B4%E6%98%8E%E7%AC%A6)
         - [类派生列表中的访问说明符](#%E7%B1%BB%E6%B4%BE%E7%94%9F%E5%88%97%E8%A1%A8%E4%B8%AD%E7%9A%84%E8%AE%BF%E9%97%AE%E8%AF%B4%E6%98%8E%E7%AC%A6)
     - [派生类构造函数](#%E6%B4%BE%E7%94%9F%E7%B1%BB%E6%9E%84%E9%80%A0%E5%87%BD%E6%95%B0)
+    - [静态类型与动态类型](#%E9%9D%99%E6%80%81%E7%B1%BB%E5%9E%8B%E4%B8%8E%E5%8A%A8%E6%80%81%E7%B1%BB%E5%9E%8B)
+    - [虚函数](#%E8%99%9A%E5%87%BD%E6%95%B0)
+        - [所有的虚函数都必须有定义](#%E6%89%80%E6%9C%89%E7%9A%84%E8%99%9A%E5%87%BD%E6%95%B0%E9%83%BD%E5%BF%85%E9%A1%BB%E6%9C%89%E5%AE%9A%E4%B9%89)
+        - [对非虚函数的调用在编译时进行绑定](#%E5%AF%B9%E9%9D%9E%E8%99%9A%E5%87%BD%E6%95%B0%E7%9A%84%E8%B0%83%E7%94%A8%E5%9C%A8%E7%BC%96%E8%AF%91%E6%97%B6%E8%BF%9B%E8%A1%8C%E7%BB%91%E5%AE%9A)
+        - [虚函数与默认实参](#%E8%99%9A%E5%87%BD%E6%95%B0%E4%B8%8E%E9%BB%98%E8%AE%A4%E5%AE%9E%E5%8F%82)
+    - [final关键字](#final%E5%85%B3%E9%94%AE%E5%AD%97)
+    - [抽象基类](#%E6%8A%BD%E8%B1%A1%E5%9F%BA%E7%B1%BB)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -3705,3 +3712,273 @@ main.cc:8:38: error: class ‘D’ does not have any field named ‘a_’
 
 派生类初始化时先初始化基类的部分，然后按照声明的顺序依次初始化派生类的成员。
 
+## 静态类型与动态类型
+
+当我们使用存在继承关系的类型时，必须将一个变量或其他表达式的**静态类型**与该表达式表示对象的**动态类型**区分开来。
+
+- 表达式的静态类型在编译时总是已知的，它是变量声明时的类型或表达式生成的类型
+- 动态类型则是变量或表达式表示的内存中的对象的类型，直到运行时才可知
+
+如果表达式既不是引用也不是指针，则它的动态类型与静态类型一致。引用或指针的静态类型与动态类型不同这一事实正是C++语言支持多态性的根本所在。
+
+## 虚函数
+
+### 所有的虚函数都必须有定义
+
+当我们用基类的引用或者指针调用一个虚成员函数时会执行动态绑定，这意味着编译器无法在编译期确定到底会使用哪个虚函数。因此我们直到运行时才能知道到底使用了哪个版本的虚函数，所以所有的虚函数都必须有定义。
+
+**test33/main1.cc**
+
+```cpp
+#include <iostream>
+
+class B {
+public:
+    B() = default;
+    explicit B(int b) : b_{b} {}
+    virtual ~B() = default;
+
+    virtual void Display();
+
+private:
+	int b_{0};
+};
+
+class D1 : public B {
+public:
+    D1() = default;
+    explicit D1(int d1) : B(), d1_{d1} {}
+    ~D1() = default;
+
+    virtual void Display() override {
+		std::cout << "D1: " << d1_ << std::endl;
+    }
+private:
+	int d1_{0};
+};
+
+int main() {
+	D1 d1(10);
+
+	return 0;
+}
+```
+
+这个例子中基类没有定义虚函数，那么在链接阶段将会报错：
+
+```bash
+/usr/bin/ld: /tmp/ccu9GgYS.o: warning: relocation against `_ZTV1B' in read-only section `.text._ZN1BD2Ev[_ZN1BD5Ev]'
+/usr/bin/ld: /tmp/ccu9GgYS.o: in function `B::B()':
+main.cc:(.text._ZN1BC2Ev[_ZN1BC5Ev]+0xf): undefined reference to `vtable for B'
+/usr/bin/ld: /tmp/ccu9GgYS.o: in function `B::~B()':
+main.cc:(.text._ZN1BD2Ev[_ZN1BD5Ev]+0xf): undefined reference to `vtable for B'
+/usr/bin/ld: /tmp/ccu9GgYS.o:(.data.rel.ro._ZTI2D1[_ZTI2D1]+0x10): undefined reference to `typeinfo for B'
+/usr/bin/ld: warning: creating DT_TEXTREL in a PIE
+collect2: error: ld returned 1 exit status
+```
+
+同样派生类只声明但没有定义虚函数，也会报同样的错误：
+
+**test33/main2.cc**
+
+```cpp
+#include <iostream>
+
+class B {
+public:
+    B() = default;
+    explicit B(int b) : b_{b} {}
+    virtual ~B() = default;
+
+    virtual void Display() {
+        std::cout << "B: " << b_ << std::endl;
+    }
+
+private:
+	int b_{0};
+};
+
+class D1 : public B {
+public:
+    D1() = default;
+    explicit D1(int d1) : B(), d1_{d1} {}
+    ~D1() = default;
+
+    virtual void Display() override;
+private:
+	int d1_{0};
+};
+
+int main() {
+	D1 d1(10);
+
+	return 0;
+}
+```
+
+链接报错：
+
+```bash
+/usr/bin/ld: /tmp/ccEGWayq.o: warning: relocation against `_ZTV2D1' in read-only section `.text._ZN2D1D2Ev[_ZN2D1D5Ev]'
+/usr/bin/ld: /tmp/ccEGWayq.o: in function `D1::D1(int)':
+main.cc:(.text._ZN2D1C2Ei[_ZN2D1C5Ei]+0x22): undefined reference to `vtable for D1'
+/usr/bin/ld: /tmp/ccEGWayq.o: in function `D1::~D1()':
+main.cc:(.text._ZN2D1D2Ev[_ZN2D1D5Ev]+0x13): undefined reference to `vtable for D1'
+/usr/bin/ld: warning: creating DT_TEXTREL in a PIE
+collect2: error: ld returned 1 exit status
+```
+
+除非我们不定义这样的对象:
+
+**test33/main3.cc**
+
+```cpp
+#include <iostream>
+
+class B {
+public:
+    B() = default;
+    explicit B(int b) : b_{b} {}
+    virtual ~B() = default;
+
+    // 虚函数没有定义
+    virtual void Display();
+private:
+	int b_{0};
+};
+
+class D1 : public B {
+public:
+    D1() = default;
+    explicit D1(int d1) : B(), d1_{d1} {}
+    ~D1() = default;
+
+    // 虚函数没有定义
+    virtual void Display() override;
+private:
+	int d1_{0};
+};
+
+int main() {
+
+	return 0;
+}
+```
+
+### 对非虚函数的调用在编译时进行绑定
+
+当且仅当通过指针或者引用调用**虚函数**时，才会在运行时解析该调用，也只有在这种情况下对象的动态类型才有可能与静态类型不同。
+
+**test33/main4.cc**
+
+```cpp
+#include <iostream>
+
+class B {
+public:
+    B() = default;
+    explicit B(int b) : b_{b} {}
+    virtual ~B() = default;
+
+    void Display() {
+		std::cout << "B" << std::endl;
+	}
+private:
+	int b_{0};
+};
+
+class D1 : public B {
+public:
+    D1() = default;
+    explicit D1(int d1) : B(), d1_{d1} {}
+    ~D1() = default;
+
+    virtual void Display() {
+		std::cout << "D1" << std::endl;
+	}
+private:
+	int d1_{0};
+};
+
+int main() {112
+	B *pb0 = new B(10);
+	B *pb1 = new D1(100);
+
+	pb0->Display();
+	pb1->Display();
+
+	return 0;
+}
+```
+
+运行结果：
+```bash
+$ ./a.out 
+B
+B
+```
+
+可以看到，B::Display并不是虚函数，那么通过指向B的指针调用Display函数只需要执行静态绑定就行。
+
+### 虚函数与默认实参
+
+如果我们通过基类的引用或指针调用函数，则使用基类中定义的默认实参，即使实际运行的是派生类中的函数版本也是如此。此时，传入派生类函数的将是基类函数定义的默认实参。如果派生类函数依赖不同的实参，则程序结果将与我们的预期不符。
+
+**test33/main5.cc**
+
+```cpp
+#include <iostream>
+
+class B {
+public:
+    B() = default;
+    explicit B(int b) : b_{b} {}
+    virtual ~B() = default;
+
+    virtual void Display(int a = 5) {
+                std::cout << "B" << " a: " << a << std::endl;
+        }
+private:
+        int b_{0};
+};
+
+class D1 : public B {
+public:
+    D1() = default;
+    explicit D1(int d1) : B(), d1_{d1} {}
+    ~D1() = default;
+
+    virtual void Display(int a = 10) override {
+                std::cout << "D1" << " a: " << a << std::endl;
+        }
+private:
+        int d1_{0};
+};
+
+int main() {
+        B *pb0 = new B(10);
+        B *pb1 = new D1(100);
+
+        pb0->Display();
+        pb1->Display();
+
+        return 0;
+}
+```
+
+可以发现，尽管调用的是派生类版本的虚函数，但实参还是基类给的默认参数：
+
+```bash
+$ ./a.out
+B a: 5
+D1 a: 5
+```
+
+如果虚函数使用默认实参，则基类和派生类中定义的默认实参最好一致。
+
+## final关键字
+
+- 防止继承的发生
+- 阻止虚函数被override
+
+## 抽象基类
