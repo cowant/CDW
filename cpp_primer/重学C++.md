@@ -66,6 +66,7 @@
     - [成员访问运算符](#%E6%88%90%E5%91%98%E8%AE%BF%E9%97%AE%E8%BF%90%E7%AE%97%E7%AC%A6)
 - [第15章 面向对象程序设计](#%E7%AC%AC15%E7%AB%A0-%E9%9D%A2%E5%90%91%E5%AF%B9%E8%B1%A1%E7%A8%8B%E5%BA%8F%E8%AE%BE%E8%AE%A1)
     - [访问说明符](#%E8%AE%BF%E9%97%AE%E8%AF%B4%E6%98%8E%E7%AC%A6)
+        - [类定义中的访问说明符](#%E7%B1%BB%E5%AE%9A%E4%B9%89%E4%B8%AD%E7%9A%84%E8%AE%BF%E9%97%AE%E8%AF%B4%E6%98%8E%E7%AC%A6)
         - [类派生列表中的访问说明符](#%E7%B1%BB%E6%B4%BE%E7%94%9F%E5%88%97%E8%A1%A8%E4%B8%AD%E7%9A%84%E8%AE%BF%E9%97%AE%E8%AF%B4%E6%98%8E%E7%AC%A6)
     - [派生类构造函数](#%E6%B4%BE%E7%94%9F%E7%B1%BB%E6%9E%84%E9%80%A0%E5%87%BD%E6%95%B0)
     - [静态类型与动态类型](#%E9%9D%99%E6%80%81%E7%B1%BB%E5%9E%8B%E4%B8%8E%E5%8A%A8%E6%80%81%E7%B1%BB%E5%9E%8B)
@@ -75,6 +76,7 @@
         - [虚函数与默认实参](#%E8%99%9A%E5%87%BD%E6%95%B0%E4%B8%8E%E9%BB%98%E8%AE%A4%E5%AE%9E%E5%8F%82)
     - [final关键字](#final%E5%85%B3%E9%94%AE%E5%AD%97)
     - [抽象基类](#%E6%8A%BD%E8%B1%A1%E5%9F%BA%E7%B1%BB)
+        - [纯虚函数](#%E7%BA%AF%E8%99%9A%E5%87%BD%E6%95%B0)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -3578,6 +3580,122 @@ c是对象，c后面的箭头操作符使用的是重载箭头操作符，即调
 
 ## 访问说明符
 
+### 类定义中的访问说明符
+
+- 定义在**public**说明符之后的成员在整个程序内可被访问，public成员定义类的接口。
+- 定义在**private**说明符之后的成员可以被类的成员函数访问，但是不能被使用该类的代码访问，private部分封装了类的实现细节。
+- 定义在**protected**说明符之后的成员可以被派生类的成员函数和友元函数访问，但对于类的用户来说是不可访问的。
+
+protected成员还有另外一条重要的性质，**派生类的的成员或者友元只能通过派生类对象来访问基类的受保护成员，派生类对于一个基类对象中的受保护成员没有任何访问特权。**
+
+```cpp
+#include <iostream>
+#include <string>
+#include <format>
+
+class A {
+public:
+    A() = default;
+    A(int a, int b) : a_{a}, b_{b} {}
+    virtual ~A() = default;
+
+protected:
+    int a_{10};
+    int b_{20};
+};
+
+class B : public A {
+friend std::ostream& operator<<(std::ostream &out, const B& b);
+public:
+    B() = default;
+    explicit B(int c) : A(), c_{c} {}
+    ~B() = default;
+
+    void Display() const {
+        std::string fstr = std::format("{} {} {}", a_, b_, c_);
+        std::cout << fstr << std::endl;
+    }
+private:
+    int c_{30};
+};
+
+std::ostream& operator<<(std::ostream &out, const B& b) {
+    std::string fstr = std::format("{} {} {}", b.a_, b.b_, b.c_);
+    out << fstr;
+    return out;
+}
+
+int main() {
+    B b(40);
+    b.Display();
+
+    std::cout << b << std::endl;
+
+    return 0;
+}
+```
+
+编译并运行：
+
+```bash
+$ g++ main.cc -std=c++20
+$ ./a.out
+10 20 40
+10 20 40
+```
+
+**test35/main1.cc**
+
+```cpp
+#include <iostream>
+
+class A {
+public:
+    A() = default;
+    A(int a, int b) : a_{a}, b_{b} {}
+    virtual ~A() = default;
+
+protected:
+    int a_{10};
+    int b_{20};
+};
+
+class B : public A {
+public:
+    B() = default;
+    explicit B(int c) : A(), c_{c} {}
+    ~B() = default;
+
+    void F() const {
+        A a(10, 20);
+        a.a_ = 1000;
+    }
+private:
+    int c_{30};
+};
+
+int main() {
+    B b(40);
+
+    return 0;
+}
+```
+
+编译会报错：
+
+```bash
+$ g++ main1.cc
+main1.cc: In member function ‘void B::F() const’:
+main1.cc:22:11: error: ‘int A::a_’ is protected within this context
+   22 |         a.a_ = 1000;
+      |           ^~
+main1.cc:10:9: note: declared protected here
+   10 |     int a_{10};
+      |         ^~
+```
+
+如果允许以上行为，那么我们只需要定义一个形如B的新类就能规避掉protected提供的访问保护了，所以派生类的成员和友元只能访问派生类对象中的基类部分的受保护成员，对于普通的基类对象中的成员不具有特殊的访问权限。
+
 ### 类派生列表中的访问说明符
 
 类派生列表的形式是：首先是一个冒号，后面紧跟以逗号分隔的基类列表，其中每个基类前面可以有以下三种访问说明符中的一种：
@@ -3982,3 +4100,118 @@ D1 a: 5
 - 阻止虚函数被override
 
 ## 抽象基类
+
+含有(或者未经覆盖直接继承)纯虚函数的类是**抽象基类**。抽象基类负责定义接口，而后续的其他类可以覆盖该接口。我们不能(直接)创建一个抽象基类。
+
+### 纯虚函数
+
+我们通过在函数体的位置(即在声明语句的分号之前)书写 **= 0**就可以将一个函数说明为纯虚函数，其中 **= 0**只能出现在类内部的虚函数声明语句处。一个纯虚函数无须定义，但我们也可以为纯虚函数提供定义，不过函数体必须定义在类的外部。
+
+```cpp
+class A {
+    void F() const = 0;
+};
+```
+
+**test34/main1.cc**
+
+```cpp
+#include <iostream>
+
+class A {
+public:
+    A() = default;
+    A(int a) : a_{a} {}
+    ~A() = default;
+    virtual void F() const = 0;
+private:
+    int a_{10};
+};
+
+void A::F() const {
+    std::cout << "A::F" << std::endl;
+}
+
+int main() {
+    A a;
+
+    return 0;
+}
+```
+
+编译报错，因为创建一个抽象基类的对象是不允许的：
+
+```bash
+$ g++  main1.cc
+main1.cc: In function ‘int main()’:
+main1.cc:18:7: error: cannot declare variable ‘a’ to be of abstract type ‘A’
+   18 |     A a;
+      |       ^
+main1.cc:3:7: note:   because the following virtual functions are pure within ‘A’:
+    3 | class A {
+      |       ^
+main1.cc:13:6: note:     ‘virtual void A::F() const’
+   13 | void A::F() const {
+      |      ^
+```
+
+创建抽象基类的派生类的对象：
+
+**test34/main2.cc**
+
+```cpp
+#include <iostream>
+
+class A {
+public:
+    A() = default;
+    A(int a) : a_{a} {}
+    ~A() = default;
+    virtual void F() const = 0;
+private:
+    int a_{10};
+};
+
+void A::F() const {
+    std::cout << "A::F" << std::endl;
+}
+
+class B : public A {
+public:
+    B() = default;
+    B(int b) : A(), b_{b} {}
+    ~B() = default;
+
+    void F() const override {
+        std::cout << "B::F" << std::endl;
+    }
+private:
+    int b_{1000};
+
+};
+
+int main() {
+    A *a = new B(120);
+
+    a->F();
+
+    return 0;
+}
+```
+
+编译并运行：
+
+```bash
+$ g++  main2.cc
+$ ./a.out
+B::F
+```
+
+
+
+
+
+
+
+
+
