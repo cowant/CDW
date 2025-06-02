@@ -3699,7 +3699,7 @@ main1.cc:10:9: note: declared protected here
       |         ^~
 ```
 
-如果允许以上行为，那么我们只需要定义一个形如B的新类就能规避掉protected提供的访问保护了，所以派生类的成员和友元只能访问派生类对象中的基类部分的受保护成员，对于普通的基类对象中的成员不具有特殊的访问权限。
+如果允许以上行为，那么我们只需要定义一个形如B的新类就能规避掉protected提供的访问保护了，所以派生类的成员和友元只能访问**派生类对象中的基类部分的受保护成员**，对于普通的基类对象中的成员不具有特殊的访问权限。
 
 ### 类派生列表中的访问说明符
 
@@ -3806,9 +3806,237 @@ main2.cc:27:12: error: ‘B’ is not an accessible base of ‘D’
 - 无论D以什么方式继承B，**D的成员函数和友元**都能使用派生类向基类的转换；派生类向其直接基类的类型转换对于派生类的成员和友元来说永远是可访问的。
 - 如果D继承B的方式是公有的或者受保护的，则**D的派生类**的成员和友元可以使用D向B的类型转换；反之，如果D继承B的方式是私有的，则不能访问。
 
+
+对于第二条，验证如下：
+
+**test31/main3/cc**
+
+```cpp
+#include <iostream>
+
+class B {
+public:
+    B() = default;
+    B(int i) : a_{i} {}
+    virtual ~B() = default;
+    void Addr() const {
+        std::cout << "object @ " << this << std::endl;
+    }
+private:
+    int a_{10};
+};
+
+class D1 : public B {
+public:
+    D1() = default;
+    D1(int i) : B(i), b_{i} {}
+    ~D1() = default;
+
+    void Foo() const {
+        B b = *this;
+        b.Addr();
+    }
+private:
+    int b_{100};
+};
+
+class D2 : protected B {
+public:
+    D2() = default;
+    D2(int i) : B(i), b_{i} {}
+    ~D2() = default;
+
+    void Foo() const {
+        B b = *this;
+        b.Addr();
+    }
+private:
+    int b_{100};
+};
+
+class D3 : private B {
+public:
+    D3() = default;
+    D3(int i) : B(i), b_{i} {}
+    ~D3() = default;
+
+    void Foo() const {
+        B b = *this;
+        b.Addr();
+    }
+private:
+    int b_{100};
+};
+
+int main() {
+    auto p1 = new D1(10000);
+    auto p2 = new D2(20000);
+    auto p3 = new D3(30000);
+
+    p1->Foo();
+    p2->Foo();
+    p3->Foo();
+
+    return 0;
+}
+```
+
+以上代码可以通过编译并运行：
+```bash
+$ g++ main3.cc
+$
+$ ./a.out
+object @ 0x7ffd6fcd0770
+object @ 0x7ffd6fcd0770
+object @ 0x7ffd6fcd0770
+```
+
+针对第三条，示例代码：
+
+**test31/main4.cc**
+
+```cpp
+#include <iostream>
+
+class B {
+public:
+    B() = default;
+    B(int i) : a_{i} {}
+    virtual ~B() = default;
+    void Addr() const {
+        std::cout << "object @ " << this << std::endl;
+    }
+private:
+    int a_{10};
+};
+
+class D1 : public B {
+public:
+    D1() = default;
+    D1(int i) : B(i), b_{i} {}
+    ~D1() = default;
+
+private:
+    int b_{100};
+};
+
+class D2 : protected B {
+public:
+    D2() = default;
+    D2(int i) : B(i), b_{i} {}
+    ~D2() = default;
+
+private:
+    int b_{100};
+};
+
+class D3 : private B {
+public:
+    D3() = default;
+    D3(int i) : B(i), b_{i} {}
+    ~D3() = default;
+
+private:
+    int b_{100};
+};
+
+class DD1 : public D1 {
+public:
+    DD1() = default;
+    DD1(int i) : D1(i), c_{i} {}
+    ~DD1() = default;
+
+    void Foo() const {
+        // D1使用public继承B，那么D1转换为B显然是没啥问题的
+        B *b = new D1(100);
+        b->Addr();
+    }
+
+private:
+    int c_{100};
+};
+
+class DD2 : public D2 {
+public:
+    DD2() = default;
+    DD2(int i) : D2(i), c_{i} {}
+    ~DD2() = default;
+
+    void Foo() const {
+        // D2使用protected继承B，为啥在这里也能转换为B ？？？显然，如果是在
+        // 用户代码中这么转换，肯定是不能通过编译的，但这里是在DD2的成员函数
+        // 中，编译器支持这么转换，或许可以这么理解：
+        //
+        // DD2的成员函数可以访问D2的public和protected成员，而D2采用protected
+        // 说明符继承B，那么可以认为B的成员位于D2的protected部分，所以DD2是可以
+        // 访问B的public和protected成员的，于是D2可以向B转换。
+        //
+        B *b = new D2(100);
+        b->Addr();
+    }
+
+private:
+    int c_{100};
+};
+
+class DD3 : public D3 {
+public:
+    DD3() = default;
+    DD3(int i) : D3(i), c_{i} {}
+    ~DD3() = default;
+
+    void Foo() const {
+        // D3使用private继承B，那么D3转换为B显然是不允许的
+        B *b = new D3(100);
+        b->Addr();
+    }
+
+private:
+    int c_{100};
+};
+
+int main() {
+    auto p1 = new DD1(10000);
+    auto p2 = new DD2(20000);
+    auto p3 = new DD3(30000);
+
+    p1->Foo();
+    p2->Foo();
+    p3->Foo();
+
+    return 0;
+}
+```
+
+以上代码编译会报错：
+
+```bash
+$ g++ main4.cc
+main4.cc: In member function ‘void DD3::Foo() const’:
+main4.cc:92:9: error: ‘class B B::B’ is private within this context
+   92 |         B *b = new D3(100);
+      |         ^
+main4.cc:35:7: note: declared private here
+   35 | class D3 : private B {
+      |       ^~
+main4.cc:92:26: error: ‘B’ is an inaccessible base of ‘D3’
+   92 |         B *b = new D3(100);
+      |                          ^
+```
+
 **对于代码中的某个给定节点来说，如果基类的公有成员是可访问的，则派生类向基类的类型转换也是可访问的，反之则不行。**
 
+我们可以做如下总结，在一条继承链中：
+- 对于用户代码，所有派生类都能向基类转换，那么必须都是public继承
+- 对于成员函数代码，所有派生类都能向基类转换，那么必须都是public继承或者protected继承
 
+
+是否可以这样理解：
+- 当D以public继承B时，B是D的public部分的成员
+- 当D以protected继承B时，B是D的protected部分的成员
+- 当D以private继承B时，B是D的private部分的成员
+
+![alt text](image-1.png)
 
 
 ## 派生类构造函数
