@@ -69,6 +69,8 @@
         - [类定义中的访问说明符](#%E7%B1%BB%E5%AE%9A%E4%B9%89%E4%B8%AD%E7%9A%84%E8%AE%BF%E9%97%AE%E8%AF%B4%E6%98%8E%E7%AC%A6)
         - [类派生列表中的访问说明符](#%E7%B1%BB%E6%B4%BE%E7%94%9F%E5%88%97%E8%A1%A8%E4%B8%AD%E7%9A%84%E8%AE%BF%E9%97%AE%E8%AF%B4%E6%98%8E%E7%AC%A6)
         - [派生类向基类转换的可访问行](#%E6%B4%BE%E7%94%9F%E7%B1%BB%E5%90%91%E5%9F%BA%E7%B1%BB%E8%BD%AC%E6%8D%A2%E7%9A%84%E5%8F%AF%E8%AE%BF%E9%97%AE%E8%A1%8C)
+        - [友元与继承](#%E5%8F%8B%E5%85%83%E4%B8%8E%E7%BB%A7%E6%89%BF)
+        - [改变个别成员的可访问性](#%E6%94%B9%E5%8F%98%E4%B8%AA%E5%88%AB%E6%88%90%E5%91%98%E7%9A%84%E5%8F%AF%E8%AE%BF%E9%97%AE%E6%80%A7)
     - [派生类构造函数](#%E6%B4%BE%E7%94%9F%E7%B1%BB%E6%9E%84%E9%80%A0%E5%87%BD%E6%95%B0)
     - [静态类型与动态类型](#%E9%9D%99%E6%80%81%E7%B1%BB%E5%9E%8B%E4%B8%8E%E5%8A%A8%E6%80%81%E7%B1%BB%E5%9E%8B)
     - [虚函数](#%E8%99%9A%E5%87%BD%E6%95%B0)
@@ -78,6 +80,7 @@
     - [final关键字](#final%E5%85%B3%E9%94%AE%E5%AD%97)
     - [抽象基类](#%E6%8A%BD%E8%B1%A1%E5%9F%BA%E7%B1%BB)
         - [纯虚函数](#%E7%BA%AF%E8%99%9A%E5%87%BD%E6%95%B0)
+    - [继承中的类作用域](#%E7%BB%A7%E6%89%BF%E4%B8%AD%E7%9A%84%E7%B1%BB%E4%BD%9C%E7%94%A8%E5%9F%9F)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -4115,6 +4118,118 @@ D::Protected
 
 D使用protected继承B，D的派生类DD的成员函数Foo可以使用B的protected成员。
 
+### 友元与继承
+
+友元关系不能传递，也不能继承。基类的友元在访问派生类成员时不具有特殊性，类似的，派生类的友元也不能随意访问基类的成员。
+
+**test36/main.cc**
+
+```cpp
+#include <iostream>
+
+class B {
+friend class F;
+public:
+    B() = default;
+    B(int a) : a_{a} {}
+    virtual ~B() = default;
+
+    void Addr() const {
+        std::cout << "B @ " << this << std::endl;
+    }
+private:
+    int a_{0};
+};
+
+class D : public B {
+public:
+    D() = default;
+    D(int a, int b) : B(a), b_{b} {}
+    ~D() = default;
+
+    void Addr() const {
+        std::cout << "D @ " << this << std::endl;
+    }
+private:
+    int b_{100};
+};
+
+class F {
+public:
+    F() = default;
+
+    void Func(const D &d) const {
+        std::cout << d.a_ << std::endl;
+    }
+};
+
+int main() {
+    D d(100, 200);
+
+    F f;
+
+    f.Func(d);
+
+    return 0;
+}
+```
+
+F是B的友元，那么F的成员函数可以访问B的成员，即使B是它的派生类D的内嵌部分。
+
+```bash
+$ g++ main.cc
+$ ./a.out
+100
+```
+
+
+### 改变个别成员的可访问性
+
+通过using声明改变派生类继承的某个名字的访问级别。
+
+**test37/main.cc**
+
+```cpp
+#include <iostream>
+
+class B {
+public:
+    B() = default;
+    B(int a) : a_{a} {}
+    virtual ~B() = default;
+
+    void Addr() const {
+        std::cout << "B @ " << this << std::endl;
+    }
+private:
+    int a_{0};
+};
+
+class D : private B {
+public:
+    D() = default;
+    D(int a, int b) : B(a), b_{b} {}
+    ~D() = default;
+
+    using B::Addr;
+
+private:
+    int b_{100};
+};
+
+int main() {
+    D d(100, 200);
+
+    d.Addr();
+
+    return 0;
+}
+```
+
+因为D使用private继承B，所以继承而来的成员B::Addr在默认情况下是D的私有成员，作为用户代码，B::Addr是不可访问的。然而我们使用using声明语句改变了它的可访问性。
+
+通过在类的内部使用using声明语句，我们可以将该类的直接或间接基类中的任何可访问成员(例如，非私有成员)标记出来。using声明语句中名字的可访问权限由该using声明语句之前的访问说明符来决定。
+
 ## 派生类构造函数
 
 派生类对象不能直接初始化基类的成员。尽管从语法上来说我们可以在**派生类构造函数体内**给它的公有或受保护的基类成员赋值，但是最好不要这么做。和使用基类的其他场合一样，派生类应该遵循基类的接口，并且**通过基类的构造函数来初始化那些从基类继承而来的成员**。
@@ -4427,7 +4542,7 @@ D1 a: 5
 
 ### 纯虚函数
 
-我们通过在函数体的位置(即在声明语句的分号之前)书写 **= 0**就可以将一个函数说明为纯虚函数，其中 **= 0**只能出现在类内部的虚函数声明语句处。一个纯虚函数无须定义，但我们也可以为纯虚函数提供定义，不过函数体必须定义在类的外部。
+我们通过在函数体的位置(即在声明语句的分号之前)书写 **= 0**就可以将一个函数说明为纯虚函数，其中 **= 0**只能出现在类内部的虚函数声明语句处。一个纯虚函数无须定义，**但我们也可以为纯虚函数提供定义，不过函数体必须定义在类的外部。**
 
 ```cpp
 class A {
@@ -4528,6 +4643,67 @@ $ g++  main2.cc
 $ ./a.out
 B::F
 ```
+
+## 继承中的类作用域
+
+每个类定义自己的作用域，在这个作用域内我们定义类的成员。当存在继承关系时，派生类的作用域嵌套在其基类的作用域之内。如果一个名字在派生类的作用域内无法正确解析，则编译器将继续在外层的基类作用域中寻找该名字的定义。
+
+名字查找先于类型检查。如果派生类(即内层作用域)的成员与基类(即外层作用域)的某个成员同名，则派生类将在其作用域内隐藏该基类成员。即使派生类成员和基类成员的形参列表不一致，基类成员也仍然会被隐藏。
+
+
+为什么基类与派生类中的虚函数必须有相同的形参列表？假如基类与派生类的虚函数接受的实参不同，我们就无法通过基类的引用或指针调用派生类的虚函数了。
+
+**test38/main.cc**
+
+```cpp
+#include <iostream>
+
+class B {
+public:
+    B() = default;
+    B(int a) : a_{a} {}
+    virtual ~B() = default;
+
+    virtual void Vfunc() const {
+        std::cout << "B @ " << this << std::endl;
+    }
+private:
+    int a_{0};
+};
+
+class D : public B {
+public:
+    D() = default;
+    D(int a, int b) : B(a), b_{b} {}
+    ~D() = default;
+
+    virtual void Vfunc(int i) const {
+        std::cout << "D @ " << this << std::endl;
+    }
+private:
+    int b_{100};
+};
+
+int main() {
+    B *p = new D(100, 200);
+
+    p->Vfunc();
+
+    return 0;
+}
+```
+
+编译运行：
+
+```bash
+$ g++ main.cc
+$ ./a.out
+B @ 0x563171c422b0
+```
+
+可以看到并没有调用D::Vfunc版本的函数。
+
+## 构造函数与拷贝控制
 
 
 
