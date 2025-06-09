@@ -81,6 +81,9 @@
     - [抽象基类](#%E6%8A%BD%E8%B1%A1%E5%9F%BA%E7%B1%BB)
         - [纯虚函数](#%E7%BA%AF%E8%99%9A%E5%87%BD%E6%95%B0)
     - [继承中的类作用域](#%E7%BB%A7%E6%89%BF%E4%B8%AD%E7%9A%84%E7%B1%BB%E4%BD%9C%E7%94%A8%E5%9F%9F)
+    - [构造函数与拷贝控制](#%E6%9E%84%E9%80%A0%E5%87%BD%E6%95%B0%E4%B8%8E%E6%8B%B7%E8%B4%9D%E6%8E%A7%E5%88%B6)
+        - [虚析构函数](#%E8%99%9A%E6%9E%90%E6%9E%84%E5%87%BD%E6%95%B0)
+        - [虚析构函数将阻止合成移动操作](#%E8%99%9A%E6%9E%90%E6%9E%84%E5%87%BD%E6%95%B0%E5%B0%86%E9%98%BB%E6%AD%A2%E5%90%88%E6%88%90%E7%A7%BB%E5%8A%A8%E6%93%8D%E4%BD%9C)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -4705,11 +4708,82 @@ B @ 0x563171c422b0
 
 ## 构造函数与拷贝控制
 
+### 虚析构函数
 
+如果基类的析构函数不是虚函数，则delete一个指向派生类对象的基类指针将产生未定义的行为。
 
+### 虚析构函数将阻止合成移动操作
 
+如果一个类定义了析构函数，即使它通过=default的形式使用了合成的版本，编译器也不会为这个类合成移动操作。
 
+原理很好理解：如果定义了析构函数，则说明清理工作有一些个性化，成员数据如果执行了移动，会产生扫尾时，数据已经无效了或继续有效，但操作会影响其他对象。这个时候会执行拷贝代替移动。
 
+**test39/main.cc**
 
+```cpp
+#include <iostream>
 
+class B {
+public:
+    B() = default;
+    B(int a) : a_{a} {}
+
+    B(const B& rhs) : a_{rhs.a_} {
+        std::cout << "copy contructor of B" << std::endl;
+    }
+
+    B(B&& rhs) : a_{rhs.a_} {
+        std::cout << "move contructor of B" << std::endl;
+    }
+private:
+    int a_{0};
+};
+
+class X1 {
+public:
+    X1() = default;
+    ~X1() = default;
+private:
+    B b_{10};
+};
+
+class X2 {
+public:
+    X2() = default;
+private:
+    B b_{10};
+};
+
+int main () {
+    X1 x1;
+    X2 x2;
+
+    X1 xx1 = std::move(x1);
+    std::cout << "###" << std::endl;
+    X2 xx2 = std::move(x2);
+
+    return 0;
+}
+```
+
+编译并运行：
+
+```bash
+$ g++ main.cc
+$ ./a.out
+copy contructor of B
+###
+move contructor of B
+
+X1自定义了虚构函数，于是X1不会合成移动构造函数，使用=构造xx1时执行的是合成的拷贝构造函数，于是X1的成员b_被拷贝:
+
+```cpp
+X1 xx1 = std::move(x1);
+```
+
+而X2没有定义析构函数，编译器可以为X2合成移动构造函数，使用=构造xx2时执行的是合成的移动构造函数，于是X1的成员b_被移动:
+
+```cpp
+X2 xx2 = std::move(x2);
+```
 
