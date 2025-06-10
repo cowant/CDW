@@ -83,7 +83,12 @@
     - [继承中的类作用域](#%E7%BB%A7%E6%89%BF%E4%B8%AD%E7%9A%84%E7%B1%BB%E4%BD%9C%E7%94%A8%E5%9F%9F)
     - [构造函数与拷贝控制](#%E6%9E%84%E9%80%A0%E5%87%BD%E6%95%B0%E4%B8%8E%E6%8B%B7%E8%B4%9D%E6%8E%A7%E5%88%B6)
         - [虚析构函数](#%E8%99%9A%E6%9E%90%E6%9E%84%E5%87%BD%E6%95%B0)
-        - [虚析构函数将阻止合成移动操作](#%E8%99%9A%E6%9E%90%E6%9E%84%E5%87%BD%E6%95%B0%E5%B0%86%E9%98%BB%E6%AD%A2%E5%90%88%E6%88%90%E7%A7%BB%E5%8A%A8%E6%93%8D%E4%BD%9C)
+        - [析构函数将阻止合成移动操作](#%E6%9E%90%E6%9E%84%E5%87%BD%E6%95%B0%E5%B0%86%E9%98%BB%E6%AD%A2%E5%90%88%E6%88%90%E7%A7%BB%E5%8A%A8%E6%93%8D%E4%BD%9C)
+        - [派生类的拷贝控制成员](#%E6%B4%BE%E7%94%9F%E7%B1%BB%E7%9A%84%E6%8B%B7%E8%B4%9D%E6%8E%A7%E5%88%B6%E6%88%90%E5%91%98)
+            - [定义派生类的拷贝或移动构造函数](#%E5%AE%9A%E4%B9%89%E6%B4%BE%E7%94%9F%E7%B1%BB%E7%9A%84%E6%8B%B7%E8%B4%9D%E6%88%96%E7%A7%BB%E5%8A%A8%E6%9E%84%E9%80%A0%E5%87%BD%E6%95%B0)
+            - [派生类赋值运算符](#%E6%B4%BE%E7%94%9F%E7%B1%BB%E8%B5%8B%E5%80%BC%E8%BF%90%E7%AE%97%E7%AC%A6)
+            - [派生类析构函数](#%E6%B4%BE%E7%94%9F%E7%B1%BB%E6%9E%90%E6%9E%84%E5%87%BD%E6%95%B0)
+            - [在构造函数和析构函数中调用虚函数](#%E5%9C%A8%E6%9E%84%E9%80%A0%E5%87%BD%E6%95%B0%E5%92%8C%E6%9E%90%E6%9E%84%E5%87%BD%E6%95%B0%E4%B8%AD%E8%B0%83%E7%94%A8%E8%99%9A%E5%87%BD%E6%95%B0)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -4712,7 +4717,7 @@ B @ 0x563171c422b0
 
 如果基类的析构函数不是虚函数，则delete一个指向派生类对象的基类指针将产生未定义的行为。
 
-### 虚析构函数将阻止合成移动操作
+### 析构函数将阻止合成移动操作
 
 如果一个类定义了析构函数，即使它通过=default的形式使用了合成的版本，编译器也不会为这个类合成移动操作。
 
@@ -4774,8 +4779,9 @@ $ ./a.out
 copy contructor of B
 ###
 move contructor of B
+```
 
-X1自定义了虚构函数，于是X1不会合成移动构造函数，使用=构造xx1时执行的是合成的拷贝构造函数，于是X1的成员b_被拷贝:
+X1自定义了析构函数，于是X1不会合成移动构造函数，使用=构造xx1时执行的是合成的拷贝构造函数，于是X1的成员b_被拷贝:
 
 ```cpp
 X1 xx1 = std::move(x1);
@@ -4787,3 +4793,283 @@ X1 xx1 = std::move(x1);
 X2 xx2 = std::move(x2);
 ```
 
+### 派生类的拷贝控制成员
+
+派生类构造函数在其初始化阶段中不但要初始化派生类自己的成员，还负责初始化派生类对象的基类部分。
+
+因此，派生类的拷贝和移动构造函数在拷贝和移动自有成员的同时，也要拷贝和移动基类部分的成员。
+
+类似的，派生类赋值运算符也必须为其基类部分的成员赋值。
+
+#### 定义派生类的拷贝或移动构造函数
+
+当为派生类定义拷贝或者移动构造函数时，我们通常使用对应的基类构造函数初始化对象的基类部分。
+
+**test40/main1.cc**
+
+```cpp
+#include <iostream>
+
+class B {
+public:
+    B() = default;
+    B(int a) : a_{a} {}
+    virtual ~B() = default;
+
+    B(const B& rhs) : a_{rhs.a_} {
+        std::cout << "copy contructor of B" << std::endl;
+    }
+
+    B(B&& rhs) : a_{rhs.a_} {
+        std::cout << "move contructor of B" << std::endl;
+    }
+private:
+    int a_{0};
+};
+
+class D : public B {
+public:
+    D() = default;
+    D(int a, int b) : B(a), b_{b} {}
+    ~D() = default;
+
+    D(const D &rhs) : B(rhs), b_{rhs.b_}{
+        std::cout << "copy contructor of D" << std::endl;
+    }
+
+    D(D &&rhs) : B(std::move(rhs)), b_{rhs.b_}{
+        std::cout << "move contructor of D" << std::endl;
+    }
+private:
+    int b_{100};
+};
+
+int main () {
+    D d1(10, 20);
+
+    D d2 = d1;
+    D d3 = std::move(d2);
+
+    return 0;
+}
+```
+
+编译并运行：
+
+```bash
+$ g++ main1.cc
+$ ./a.out
+copy contructor of B
+copy contructor of D
+move contructor of B
+move contructor of D
+```
+
+#### 派生类赋值运算符
+
+与拷贝移动构造函数一样，派生类的赋值运算符也必须显示地为其基类部分赋值。
+
+**test40/main2.cc**
+
+```cpp
+#include <iostream>
+
+class B {
+public:
+    B() = default;
+    B(int a) : a_{a} {}
+    virtual ~B() = default;
+
+    B(const B& rhs) : a_{rhs.a_} {
+        std::cout << "copy contructor of B" << std::endl;
+    }
+
+    B(B&& rhs) : a_{rhs.a_} {
+        std::cout << "move contructor of B" << std::endl;
+    }
+
+    B& operator=(const B& rhs) = default;
+
+    B& operator=(B&& rhs) = default;
+
+private:
+    int a_{0};
+};
+
+class D : public B {
+public:
+    D() = default;
+    D(int a, int b) : B(a), b_{b} {}
+    ~D() = default;
+
+    D(const D &rhs) : B(rhs), b_{rhs.b_}{
+        std::cout << "copy contructor of D" << std::endl;
+    }
+
+    D(D &&rhs) : B(std::move(rhs)), b_{rhs.b_}{
+        std::cout << "move contructor of D" << std::endl;
+    }
+
+    D& operator=(const D& rhs) {
+        B::operator=(rhs);
+        b_ = rhs.b_;
+
+        std::cout << "copy assignment" << std::endl;
+
+        return *this;
+    }
+
+    D& operator=(D && rhs) {
+        B::operator=(std::move(rhs));
+        b_ = rhs.b_;
+
+        std::cout << "move assignment" << std::endl;
+
+        return *this;
+    }
+private:
+    int b_{100};
+};
+
+int main () {
+    D d1(10, 20);
+    D d2(20, 30);
+    D d3(30, 40);
+
+    d2 = d1;
+    d3 = std::move(d2);
+
+    return 0;
+}
+```
+
+编译并运行：
+
+```bash
+$ g++ main2.cc
+$ ./a.out
+copy assignment
+move assignment
+```
+
+#### 派生类析构函数
+
+在析构函数体执行完成后，对象的成员会被隐式销毁。类似的，对象的基类部分也是隐式销毁的。因此，和构造函数以及赋值运算符不同的是，派生类的析构函数只负责销毁由派生类自己分配的资源。
+
+**test40/main3.cc**
+
+```cpp
+#include <iostream>
+
+class B {
+public:
+    B() = default;
+    B(int a) : a_{a} {}
+    virtual ~B() {
+        std::cout << "B destructor" << std::endl;
+    }
+
+private:
+    int a_{0};
+};
+
+class D : public B {
+public:
+    D() = default;
+    D(int a, int b) : B(a), b_{b} {}
+    ~D() {
+        std::cout << "D destructor"  << std::endl;
+    }
+
+private:
+    int b_{100};
+};
+
+int main () {
+    D d1(10, 20);
+
+    return 0;
+}
+```
+
+编译并运行:
+
+```bash
+$ g++ main3.cc
+$ ./a.out
+D destructor
+B destructor
+```
+
+#### 在构造函数和析构函数中调用虚函数
+
+如我们所知，派生类对象的基类部分将首先被构建。当执行基类的构造函数时，该对象的派生类部分是未被初始化的状态。
+
+类似的，销毁派生类对象的次序正好相反，因此当执行基类的析构函数时，派生类部分已经被销毁掉了。由此可知，当我们执行上述基类成员的时候，该对象处于未完成的状态。
+
+如果构造函数或析构函数调用了某个虚函数，则我们应该执行与构造函数或析构函数所属类型相对应的虚函数版本。
+
+**test40/main4.cc**
+
+```cpp
+#include <iostream>
+
+class B {
+public:
+    B() = default;
+    B(int a) : a_{a} {
+        F();
+    }
+    virtual ~B() {
+        F();
+    }
+
+    virtual void F() const {
+        std::cout << "B::F" << std::endl;
+    }
+
+private:
+    int a_{0};
+};
+
+class D : public B {
+public:
+    D() = default;
+
+    D(int a, int b) : B(a), b_{b} {
+        F();
+    }
+
+    ~D() {
+        F();
+    }
+
+    void F() const override {
+        std::cout << "D::F" << std::endl;
+    }
+private:
+    int b_{100};
+};
+
+int main () {
+    D d1(10, 20);
+
+    std::cout << "###" << std::endl;
+
+    return 0;
+}
+```
+
+编译并运行：
+
+```bash
+$ g++ main4.cc
+$ ./a.out
+B::F
+D::F
+###
+D::F
+B::F
+```
+
+这么理解，当D的构造函数在调用B的构造函数构造基类部分时，此时这个对象的实际类型还是B，调用的虚函数F绑定到B::F上，当完成B的构造和执行完初始化列表后，这个对象的实际类型才成为D，调用的虚函数F绑定到D::F上。而析构函数调用虚函数的绑定与此相反。
