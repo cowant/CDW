@@ -91,6 +91,10 @@
             - [在构造函数和析构函数中调用虚函数](#%E5%9C%A8%E6%9E%84%E9%80%A0%E5%87%BD%E6%95%B0%E5%92%8C%E6%9E%90%E6%9E%84%E5%87%BD%E6%95%B0%E4%B8%AD%E8%B0%83%E7%94%A8%E8%99%9A%E5%87%BD%E6%95%B0)
             - [继承的构造函数](#%E7%BB%A7%E6%89%BF%E7%9A%84%E6%9E%84%E9%80%A0%E5%87%BD%E6%95%B0)
 - [模板与泛型编程](#%E6%A8%A1%E6%9D%BF%E4%B8%8E%E6%B3%9B%E5%9E%8B%E7%BC%96%E7%A8%8B)
+    - [定义模版](#%E5%AE%9A%E4%B9%89%E6%A8%A1%E7%89%88)
+        - [模板参数](#%E6%A8%A1%E6%9D%BF%E5%8F%82%E6%95%B0)
+        - [inline和constexpr的函数模板](#inline%E5%92%8Cconstexpr%E7%9A%84%E5%87%BD%E6%95%B0%E6%A8%A1%E6%9D%BF)
+        - [模板编译](#%E6%A8%A1%E6%9D%BF%E7%BC%96%E8%AF%91)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -5170,4 +5174,127 @@ D(int, int) : B(int, int) {}
 当一个基类的构造函数含有默认实参时，派生类将获得多个继承的构造函数，其中每个构造函数分别省略掉一个含有默认实参的形参。
 
 # 模板与泛型编程
+
+## 定义模版
+
+模板定义以关键字template开始，后跟一个**模板参数列表**，这是一个逗号分割的一个或多个**模板参数**的列表。
+
+在模板定义中，模板参数列表不能为空。
+
+### 模板参数
+
+- 模板类型参数
+- 模板非类型参数
+
+一个非类型参数表示一个值而非一个类型。我们通过一个特定的类型名而非关键字class或typename来指定非类型参数。
+
+当一个模板被实例化时，非类型参数被一个用户提供的或编译器推断出的值所代替。这些值必须是常量表达式，从而允许编译器在编译时实例化模板。
+
+**一个非类型参数可以是一个整型，或者是一个指向对象或者函数的指针或左值引用。**
+
+在模板定义内，模板非类型参数是一个常量值。在需要常量表达式的地方，可以使用非类型参数，例如，指定数组大小。
+
+**test41/main1.cc**
+
+```cpp
+#include <iostream>
+
+template <double v> void F() {
+    std::cout << v << std::endl;
+}
+
+int main() {
+    F<8.0>();
+
+    return 0;
+}
+```
+
+编译会报错：
+
+```bash
+main1.cc:3:18: error: ‘double’ is not a valid type for a template non-type parameter
+    3 | template <double v> void F() {
+      |                  ^
+main1.cc: In function ‘int main()’:
+main1.cc:8:11: error: no matching function for call to ‘F<8.0e+0>()’
+    8 |     F<8.0>();
+      |     ~~~~~~^~
+main1.cc:3:26: note: candidate: ‘template<<typeprefixerror>v> void F()’
+    3 | template <double v> void F() {
+      |                          ^
+main1.cc:3:26: note:   template argument deduction/substitution failed:
+main1.cc:8:11: note: invalid template non-type parameter
+    8 |     F<8.0>();
+      |     ~~~~~~^~
+```
+
+### inline和constexpr的函数模板
+
+**test41/main2.cc**
+
+```cpp
+#include <iostream>
+
+template <int v> inline void F() {
+    std::cout << v << std::endl;
+}
+
+int main() {
+    F<8>();
+
+    return 0;
+}
+```
+
+编译并运行：
+
+```bash
+$ g++ main2.cc
+$ ./a.out
+8
+```
+
+### 模板编译
+
+当编译器遇到一个模板定义时，它并不生成代码。只有当我们实例化出模板的一个特定版本时，编译器才会生成代码。
+
+为了生成一个实例化版本，编译器需要掌握函数模板或类模板成员函数的定义，因此，与非模板代码不同，模板的头文件通常既包括声明也包括定义。
+
+**test41**
+
+```cpp
+// tp.h
+#include <iostream>
+
+template <int v> void F();
+
+
+// tp.cc
+#include "tp.h"
+
+template <int v> void F() {
+    std::cout << v << std::endl;
+}
+
+// main.cc
+#include "tp.h"
+
+int main() {
+    F<8>();
+
+    return 0;
+}
+```
+
+编译代码会报链接错误：
+
+```bash
+$ g++ main.cc   tp.cc
+/usr/bin/ld: /tmp/ccAgQAph.o: in function `main':
+main.cc:(.text+0x9): undefined reference to `void F<8>()'
+collect2: error: ld returned 1 exit status
+```
+
+
 
