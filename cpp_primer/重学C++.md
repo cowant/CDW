@@ -97,6 +97,8 @@
         - [模板编译](#%E6%A8%A1%E6%9D%BF%E7%BC%96%E8%AF%91)
         - [类模板的成员函数](#%E7%B1%BB%E6%A8%A1%E6%9D%BF%E7%9A%84%E6%88%90%E5%91%98%E5%87%BD%E6%95%B0)
         - [在类代码内简化模板类名的使用](#%E5%9C%A8%E7%B1%BB%E4%BB%A3%E7%A0%81%E5%86%85%E7%AE%80%E5%8C%96%E6%A8%A1%E6%9D%BF%E7%B1%BB%E5%90%8D%E7%9A%84%E4%BD%BF%E7%94%A8)
+        - [类模板和友元](#%E7%B1%BB%E6%A8%A1%E6%9D%BF%E5%92%8C%E5%8F%8B%E5%85%83)
+            - [一对一友元关系](#%E4%B8%80%E5%AF%B9%E4%B8%80%E5%8F%8B%E5%85%83%E5%85%B3%E7%B3%BB)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -5420,10 +5422,99 @@ $ ./a.out
 6 12 18 24
 ```
 
-在定义X2成员函数时，返回类型我们写的是A&, 而不是A<T>&, 不需要提供类模板类型参数，因为我们**是在类内部定义的X2**，可以不提供实参。
+在定义X2成员函数时，返回类型我们写的是A&, 而不是A\<T\>&, 不需要提供类模板类型参数，因为我们**是在类内部定义的X2**，可以不提供实参。
 
-而在**类外定义X3成员函数时**，返回类型我们写的是A<T>&, 需要提供类模板类型参数。我们必须指出返回类型是一个实例化的A，它的类型与类实例化所用的类型一致。在函数体内，我们已经进入类的作用域，因此在定义ret时无须重复模板实参。**如果不提供模板实参，编译器将假定我们使用的类型与成员实例化所用的类型一致**，因此，ret的定义与如下代码等价：
+而在**类外定义X3成员函数时**，返回类型我们写的是A\<T\>&, 需要提供类模板类型参数。我们必须指出返回类型是一个实例化的A，它的类型与类实例化所用的类型一致。在函数体内，我们已经进入类的作用域，因此在定义ret时无须重复模板实参。**如果不提供模板实参，编译器将假定我们使用的类型与成员实例化所用的类型一致**，因此，ret的定义与如下代码等价：
 
 ```cpp
 A<T> &ret = *this;
+```
+
+### 类模板和友元
+
+如果一个类模板包含一个**非模板友元**，则友元被授权可以访问所有模板实例。
+
+如果友元自身是模板，类可以授权给所有友元模板实例，也可以只授权给特定实例。
+
+#### 一对一友元关系
+
+类模板与另一个(类或函数)模板间友好关系的最常见形式是建立对应实例及其友元间的友好关系。
+
+**test45: 模板类与模板函数间一对一的友元关系**
+
+```cpp
+// tp.hpp
+
+#include <iostream>
+#include <vector>
+#include <initializer_list>
+
+
+template <typename> class A;
+template <typename T> std::ostream& operator<<(std::ostream& out, const A<T> &a);
+
+template <typename T>
+class A {
+friend std::ostream& operator<<<T>(std::ostream& out, const A &a);
+public:
+    A() = default;
+    A(std::initializer_list<T> li) : data_(li) {}
+
+    size_t size() const {
+        return data_.size();
+    }
+
+private:
+    std::vector<T> data_;
+};
+
+template <typename T>
+std::ostream& operator<<(std::ostream& out, const A<T> &a) {
+    for (const auto & e : a.data_) {
+        out << e << " ";
+    }
+
+   return out;
+}
+
+// main.cc
+#include "tp.hpp"
+#include <iostream>
+
+int main() {
+    A<int> a = {1, 2, 3, 4};
+    A<std::string> b = {"aaa", "bbb", "ccc", "ddd"};
+
+    std::cout << a << std::endl;
+    std::cout << b << std::endl;
+
+    return 0;
+}
+```
+
+编译并运行：
+
+```bash
+$ g++ main.cc
+$ ./a.out
+1 2 3 4
+aaa bbb ccc ddd
+```
+
+我们先将A, operator<<声明为模板。这些声明是operator<<函数的参数声明以及A中的友元声明所必需的。
+
+友元函数operator<<的声明用A的模板参数作为它自己的模板参数。因此，友元关系被限定在用相同类型实例化的A与输出运算符operator<<之间。
+
+```bash
+A<T> <---> operator<<<T>
+```
+
+从这个例子中我们也可以看到函数声明与友元函数声明之间的区别：
+
+```cpp
+// 模板函数声明
+template <typename T> std::ostream& operator<<(std::ostream& out, const A<T> &a);
+
+// 友元函数声明
+friend std::ostream& operator<<<T>(std::ostream& out, const A& a);
 ```
