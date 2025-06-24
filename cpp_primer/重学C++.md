@@ -99,6 +99,7 @@
         - [在类代码内简化模板类名的使用](#%E5%9C%A8%E7%B1%BB%E4%BB%A3%E7%A0%81%E5%86%85%E7%AE%80%E5%8C%96%E6%A8%A1%E6%9D%BF%E7%B1%BB%E5%90%8D%E7%9A%84%E4%BD%BF%E7%94%A8)
         - [类模板和友元](#%E7%B1%BB%E6%A8%A1%E6%9D%BF%E5%92%8C%E5%8F%8B%E5%85%83)
             - [一对一友元关系](#%E4%B8%80%E5%AF%B9%E4%B8%80%E5%8F%8B%E5%85%83%E5%85%B3%E7%B3%BB)
+            - [通用和特定的模板友好关系](#%E9%80%9A%E7%94%A8%E5%92%8C%E7%89%B9%E5%AE%9A%E7%9A%84%E6%A8%A1%E6%9D%BF%E5%8F%8B%E5%A5%BD%E5%85%B3%E7%B3%BB)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -5501,12 +5502,23 @@ $ ./a.out
 aaa bbb ccc ddd
 ```
 
-我们先将A, operator<<声明为模板。这些声明是operator<<函数的参数声明以及A中的友元声明所必需的。
+为了引用(类或函数)模板的一个特定实例，我们必须先声明模板自身。一个模板声明包括模板参数列表。
 
-友元函数operator<<的声明用A的模板参数作为它自己的模板参数。因此，友元关系被限定在用相同类型实例化的A与输出运算符operator<<之间。
+所以在上述代码中，我们先将A, operator<<声明为模板。这些声明是operator<<函数的参数声明以及A中的友元声明所必需的。
 
-```bash
-A<T> <---> operator<<<T>
+```cpp
+template <typename> class A;
+template <typename T> std::ostream& operator<<(std::ostream& out, const A<T> &a);
+```
+
+友元函数operator<<的声明用A的模板形参作为它自己的模板实参。因此，友元关系被限定在用相同类型实例化的A与输出运算符operator<<之间。
+
+```cpp
+template <typename T>
+class A {
+friend std::ostream& operator<<<T>(std::ostream& out, const A &a);
+// ...
+};
 ```
 
 从这个例子中我们也可以看到函数声明与友元函数声明之间的区别：
@@ -5518,3 +5530,72 @@ template <typename T> std::ostream& operator<<(std::ostream& out, const A<T> &a)
 // 友元函数声明
 friend std::ostream& operator<<<T>(std::ostream& out, const A& a);
 ```
+
+**test46: 模板类之间一对一友元关系**
+
+```cpp
+// tp.hpp
+#include <vector>
+#include <initializer_list>
+#include <memory>
+
+
+template <typename T> class B;
+
+template <typename T>
+class A {
+friend class B<T>;
+public:
+    A() = default;
+    A(std::initializer_list<T> li) : data_(li) {}
+
+    size_t size() const {
+        return data_.size();
+    }
+
+private:
+    std::vector<T> data_;
+};
+
+template <typename T>
+class B {
+public:
+    B() = default;
+    B(std::shared_ptr<A<T>> ptr) : ptr_{ptr} {}
+
+    void Clear(size_t i) {
+        if (auto p = ptr_.lock()) {
+           p->data_[i] = T();
+        }
+    }
+
+private:
+    std::weak_ptr<A<T>> ptr_;
+};
+
+// main.cc
+#include "tp.hpp"
+#include <iostream>
+
+int main() {
+    std::initializer_list<int> l2 = {1, 2, 3, 4};
+    auto p1 = std::make_shared<A<int>>(l2);
+
+    std::initializer_list<std::string> l3 = {"aaa", "bbb", "ccc", "ddd"};
+    auto p2 = std::make_shared<A<std::string>>(l3);
+
+    B<int> b1(p1);
+    B<std::string> b2(p2);
+
+    b1.Clear(1);
+    b2.Clear(1);
+
+    return 0;
+}
+```
+
+#### 通用和特定的模板友好关系
+
+
+
+
