@@ -99,7 +99,8 @@
         - [在类代码内简化模板类名的使用](#%E5%9C%A8%E7%B1%BB%E4%BB%A3%E7%A0%81%E5%86%85%E7%AE%80%E5%8C%96%E6%A8%A1%E6%9D%BF%E7%B1%BB%E5%90%8D%E7%9A%84%E4%BD%BF%E7%94%A8)
         - [类模板和友元](#%E7%B1%BB%E6%A8%A1%E6%9D%BF%E5%92%8C%E5%8F%8B%E5%85%83)
             - [一对一友元关系](#%E4%B8%80%E5%AF%B9%E4%B8%80%E5%8F%8B%E5%85%83%E5%85%B3%E7%B3%BB)
-            - [通用和特定的模板友好关系](#%E9%80%9A%E7%94%A8%E5%92%8C%E7%89%B9%E5%AE%9A%E7%9A%84%E6%A8%A1%E6%9D%BF%E5%8F%8B%E5%A5%BD%E5%85%B3%E7%B3%BB)
+            - [通用模板友好关系](#%E9%80%9A%E7%94%A8%E6%A8%A1%E6%9D%BF%E5%8F%8B%E5%A5%BD%E5%85%B3%E7%B3%BB)
+            - [限定特定的实例为友元](#%E9%99%90%E5%AE%9A%E7%89%B9%E5%AE%9A%E7%9A%84%E5%AE%9E%E4%BE%8B%E4%B8%BA%E5%8F%8B%E5%85%83)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -5594,8 +5595,45 @@ int main() {
 }
 ```
 
-#### 通用和特定的模板友好关系
+在这个例子中，B<int>类是A<int>类的友元，B<std::string>是A<std::string>的友元。当模板实参确实时，类B<T>是类A<T>的友元，
 
+#### 通用模板友好关系
 
+**A是一个非模板类，B是一个模板类，将B的每个实例都声明为A的友元：**
+
+```cpp
+class A {
+  template <typename T>  friend class B; // 不需要B的前置声明
+};
+```
+
+**A是一个模板类，B是一个非模板类，将B声明为A的每个实例的友元：**
+
+```cpp
+template <typename T> class A {
+friend class B; // 不需要B的前置声明
+};
+```
+
+**A是一个模板类，B是一个模板类，将B的所有实例都声明为A的每个实例的友元：**
+
+```cpp
+template <typename T> class A {
+  // 友元声明必须使用与模板A不同的模板形参
+  template <typename X> friend class B; // 不需要B的前置声明
+};
+```
+
+#### 限定特定的实例为友元
+
+**A是一个非模板类，B是一个模板类，将用A实例化的类B<A>声明为A的友元：**
+
+```cpp
+template <typename T> class B;
+
+class A {
+  friend class B<A>; // 必须要有模板类B的前置声明
+};
+```
 
 
