@@ -101,6 +101,9 @@
             - [一对一友元关系](#%E4%B8%80%E5%AF%B9%E4%B8%80%E5%8F%8B%E5%85%83%E5%85%B3%E7%B3%BB)
             - [通用模板友好关系](#%E9%80%9A%E7%94%A8%E6%A8%A1%E6%9D%BF%E5%8F%8B%E5%A5%BD%E5%85%B3%E7%B3%BB)
             - [限定特定的实例为友元](#%E9%99%90%E5%AE%9A%E7%89%B9%E5%AE%9A%E7%9A%84%E5%AE%9E%E4%BE%8B%E4%B8%BA%E5%8F%8B%E5%85%83)
+            - [令模板自己的类型参数成为友元](#%E4%BB%A4%E6%A8%A1%E6%9D%BF%E8%87%AA%E5%B7%B1%E7%9A%84%E7%B1%BB%E5%9E%8B%E5%8F%82%E6%95%B0%E6%88%90%E4%B8%BA%E5%8F%8B%E5%85%83)
+            - [模板类型别名](#%E6%A8%A1%E6%9D%BF%E7%B1%BB%E5%9E%8B%E5%88%AB%E5%90%8D)
+            - [类模板的static成员](#%E7%B1%BB%E6%A8%A1%E6%9D%BF%E7%9A%84static%E6%88%90%E5%91%98)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -5595,7 +5598,7 @@ int main() {
 }
 ```
 
-在这个例子中，B<int>类是A<int>类的友元，B<std::string>是A<std::string>的友元。当模板实参确实时，类B<T>是类A<T>的友元，
+在这个例子中，B<int>类是A<int>类的友元，B\<std::string\>是A\<std::string\>的友元。当模板实参确实时，类B\<T\>是类A\<T\>的友元，
 
 #### 通用模板友好关系
 
@@ -5626,7 +5629,7 @@ template <typename T> class A {
 
 #### 限定特定的实例为友元
 
-**A是一个非模板类，B是一个模板类，将用A实例化的类B<A>声明为A的友元：**
+**A是一个非模板类，B是一个模板类，将用A实例化的类B\<A\>声明为A的友元：**
 
 ```cpp
 template <typename T> class B;
@@ -5636,4 +5639,160 @@ class A {
 };
 ```
 
+#### 令模板自己的类型参数成为友元
 
+**test47**
+
+```cpp
+// tp.hpp
+template <typename T>
+class A {
+friend T;
+public:
+  A() = default;
+  A(int d) : d_{d} {}
+private:
+  int d_{10};
+};
+
+// main.cc
+#include "tp.hpp"
+#include <string>
+
+int main() {
+    A<std::string> a(100);
+
+    return 0;
+}
+```
+
+以上例子将模板类型参数T声明为friend
+
+```cpp
+friend T;
+```
+
+注意这里不能写成:
+
+```cpp
+friend class T;
+```
+
+不然编译器会报错：
+
+**test47**
+
+```cpp
+// tp1.hpp
+template <typename T>
+class A {
+friend class T;
+friend int;
+friend double;
+public:
+  A() = default;
+  A(int d) : d_{d} {}
+private:
+  int d_{10};
+};
+
+// main1.cc
+#include "tp1.hpp"
+#include <string>
+
+int main() {
+    A<std::string> a(100);
+
+    return 0;
+}
+```
+
+编译上述代码：
+
+```cpp
+$ g++ main1.cc
+In file included from main1.cc:1:
+tp1.hpp:3:14: error: using template type parameter ‘T’ after ‘class’
+    3 | friend class T;
+      |              ^
+tp1.hpp:3:1: error: friend declaration does not name a class or function
+    3 | friend class T;
+      | ^~~~~~
+```
+
+#### 模板类型别名
+
+新标准允许我们为类模板定义一个类型别名。
+
+**test48/main.cc**
+
+```cpp
+#include <string>
+
+template <typename T> using P1 = std::pair<T, T>;
+template <typename T> using P2 = std::pair<T, std::string>;
+
+int main () {
+    P1<int> p1(1, 2);
+
+    P2<int> p2(100, "hello");
+
+    P2<double> p3(100.00, "hello");
+
+    return 0;
+}
+```
+
+#### 类模板的static成员
+
+与其他任何类相同，类模板可以声明为static成员。
+
+**test49**
+
+```cpp
+// main.cc
+#include <iostream>
+
+template <typename T>
+class Foo {
+public:
+    Foo() = default;
+    static std::size_t Count() {
+        std::cout << "address @" << &cnt << std::endl;
+        return cnt;
+    }
+private:
+    static std::size_t cnt;
+};
+
+template <typename T> std::size_t Foo<T>::cnt = 0;
+
+int main() {
+    Foo<std::string> f1;
+    Foo<std::string> f2;
+    Foo<int> f3;
+    Foo<int> f4;
+
+    f1.Count();
+    f2.Count();
+    f3.Count();
+    f4.Count();
+
+    return 0;
+}
+```
+
+编译并运行：
+
+```cpp
+$ g++ main.cc
+$ ./a.out
+address @0x562030eb0158
+address @0x562030eb0158
+address @0x562030eb0160
+address @0x562030eb0160
+```
+
+对于任意给定的类型X，都有一个Foo\<X\>::cnt和一个Foo\<X\>::Count成员。所有Foo\<X\>类型的对象共享相同的cnt对象和Count函数。
+
+**类似任何其他成员函数，一个static成员函数只有在使用时才会实例化。**
