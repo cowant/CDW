@@ -104,6 +104,7 @@
             - [令模板自己的类型参数成为友元](#%E4%BB%A4%E6%A8%A1%E6%9D%BF%E8%87%AA%E5%B7%B1%E7%9A%84%E7%B1%BB%E5%9E%8B%E5%8F%82%E6%95%B0%E6%88%90%E4%B8%BA%E5%8F%8B%E5%85%83)
             - [模板类型别名](#%E6%A8%A1%E6%9D%BF%E7%B1%BB%E5%9E%8B%E5%88%AB%E5%90%8D)
             - [类模板的static成员](#%E7%B1%BB%E6%A8%A1%E6%9D%BF%E7%9A%84static%E6%88%90%E5%91%98)
+            - [使用类的类型成员](#%E4%BD%BF%E7%94%A8%E7%B1%BB%E7%9A%84%E7%B1%BB%E5%9E%8B%E6%88%90%E5%91%98)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -5796,3 +5797,41 @@ address @0x562030eb0160
 对于任意给定的类型X，都有一个Foo\<X\>::cnt和一个Foo\<X\>::Count成员。所有Foo\<X\>类型的对象共享相同的cnt对象和Count函数。
 
 **类似任何其他成员函数，一个static成员函数只有在使用时才会实例化。**
+
+#### 使用类的类型成员
+
+假定T是一个模板类型参数，当编译器遇到类似T::mem这样的代码时，它不会知道mem是一个类型成员还是一个static数据成员，直至实例化时才会知道。但是为了处理模板，编译器必须知道名字是否表示一个类型。例如，假定T是一个类型参数的名字，当编译器遇到如下形式的语句时：
+
+```cpp
+T::size_type *p;
+```
+
+它需要知道我们是正在定义一个名为p的变量还是将一个名为size_type的static数据成员与名为p的变量相乘。
+
+默认情况下，C++语言假定通过作用域运算符访问的名字不是类型。因此，如果我们希望使用一个模板类型参数的类型成员，就需要显式告诉编译器该名字是一个类型。我们通过使用关键字typename来实现这一点。
+
+**test50**
+
+```cpp
+#include <iostream>
+#include <vector>
+
+template <typename T>
+typename T::value_type top(const T& c) {
+    if (!c.empty()) {
+        return c.back();
+    } else {
+        return typename T::value_type();
+    }
+}
+
+int main() {
+    std::vector<int> vec = {1, 2, 3, 5};
+
+    std::cout << top(vec) << std::endl;
+
+    return 0;
+}
+```
+
+当我们希望通知编译器一个名字表示类型时，必须使用关键字typename，而不能使用class。
