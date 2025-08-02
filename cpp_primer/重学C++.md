@@ -102,9 +102,11 @@
             - [通用模板友好关系](#%E9%80%9A%E7%94%A8%E6%A8%A1%E6%9D%BF%E5%8F%8B%E5%A5%BD%E5%85%B3%E7%B3%BB)
             - [限定特定的实例为友元](#%E9%99%90%E5%AE%9A%E7%89%B9%E5%AE%9A%E7%9A%84%E5%AE%9E%E4%BE%8B%E4%B8%BA%E5%8F%8B%E5%85%83)
             - [令模板自己的类型参数成为友元](#%E4%BB%A4%E6%A8%A1%E6%9D%BF%E8%87%AA%E5%B7%B1%E7%9A%84%E7%B1%BB%E5%9E%8B%E5%8F%82%E6%95%B0%E6%88%90%E4%B8%BA%E5%8F%8B%E5%85%83)
-            - [模板类型别名](#%E6%A8%A1%E6%9D%BF%E7%B1%BB%E5%9E%8B%E5%88%AB%E5%90%8D)
-            - [类模板的static成员](#%E7%B1%BB%E6%A8%A1%E6%9D%BF%E7%9A%84static%E6%88%90%E5%91%98)
-            - [使用类的类型成员](#%E4%BD%BF%E7%94%A8%E7%B1%BB%E7%9A%84%E7%B1%BB%E5%9E%8B%E6%88%90%E5%91%98)
+        - [模板类型别名](#%E6%A8%A1%E6%9D%BF%E7%B1%BB%E5%9E%8B%E5%88%AB%E5%90%8D)
+        - [类模板的static成员](#%E7%B1%BB%E6%A8%A1%E6%9D%BF%E7%9A%84static%E6%88%90%E5%91%98)
+        - [使用类的类型成员](#%E4%BD%BF%E7%94%A8%E7%B1%BB%E7%9A%84%E7%B1%BB%E5%9E%8B%E6%88%90%E5%91%98)
+        - [默认模板参数](#%E9%BB%98%E8%AE%A4%E6%A8%A1%E6%9D%BF%E5%8F%82%E6%95%B0)
+        - [模板默认实参与类模板](#%E6%A8%A1%E6%9D%BF%E9%BB%98%E8%AE%A4%E5%AE%9E%E5%8F%82%E4%B8%8E%E7%B1%BB%E6%A8%A1%E6%9D%BF)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -5721,7 +5723,7 @@ tp1.hpp:3:1: error: friend declaration does not name a class or function
       | ^~~~~~
 ```
 
-#### 模板类型别名
+### 模板类型别名
 
 新标准允许我们为类模板定义一个类型别名。
 
@@ -5744,7 +5746,7 @@ int main () {
 }
 ```
 
-#### 类模板的static成员
+### 类模板的static成员
 
 与其他任何类相同，类模板可以声明为static成员。
 
@@ -5798,7 +5800,7 @@ address @0x562030eb0160
 
 **类似任何其他成员函数，一个static成员函数只有在使用时才会实例化。**
 
-#### 使用类的类型成员
+### 使用类的类型成员
 
 假定T是一个模板类型参数，当编译器遇到类似T::mem这样的代码时，它不会知道mem是一个类型成员还是一个static数据成员，直至实例化时才会知道。但是为了处理模板，编译器必须知道名字是否表示一个类型。例如，假定T是一个类型参数的名字，当编译器遇到如下形式的语句时：
 
@@ -5835,3 +5837,53 @@ int main() {
 ```
 
 当我们希望通知编译器一个名字表示类型时，必须使用关键字typename，而不能使用class。
+
+### 默认模板参数
+
+在C++11新标准中，我们可以为函数和类模板提供默认实参。
+
+**test51/main1.cc**
+
+```cpp
+#include <functional>
+
+template <typename T, typename F = std::less<T>>
+int compare(const T &v1, const T &v2, F f = F()) {
+    if (f(v1, v2)) {
+        return -1;
+    } else if (f(v2, v1)) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+int main() {
+    compare(1, 2);
+
+    return 0;
+}
+```
+
+### 模板默认实参与类模板
+
+无论何时使用一个**类模板**，我们都必须在模板名之后接上尖括号。尖括号指出类必须从一个模板实例化而来，特别是，如果一个类模板为其所有参数都提供了默认实参，且我们希望使用这些默认实参，就必须在模板名之后跟一个空尖括号对。
+
+**test51/main2.cc**
+
+```cpp
+template <typename T = int>
+class Numbers {
+public:
+    Numbers(T v = 0) : val{v} {}
+private:
+    T val;
+};
+
+int main() {
+    Numbers<double> v1;
+    Numbers<> v2;
+
+    return 0;
+}
+```
