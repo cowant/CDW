@@ -107,6 +107,9 @@
         - [使用类的类型成员](#%E4%BD%BF%E7%94%A8%E7%B1%BB%E7%9A%84%E7%B1%BB%E5%9E%8B%E6%88%90%E5%91%98)
         - [默认模板参数](#%E9%BB%98%E8%AE%A4%E6%A8%A1%E6%9D%BF%E5%8F%82%E6%95%B0)
         - [模板默认实参与类模板](#%E6%A8%A1%E6%9D%BF%E9%BB%98%E8%AE%A4%E5%AE%9E%E5%8F%82%E4%B8%8E%E7%B1%BB%E6%A8%A1%E6%9D%BF)
+        - [成员模板](#%E6%88%90%E5%91%98%E6%A8%A1%E6%9D%BF)
+            - [普通非模板类的成员模板](#%E6%99%AE%E9%80%9A%E9%9D%9E%E6%A8%A1%E6%9D%BF%E7%B1%BB%E7%9A%84%E6%88%90%E5%91%98%E6%A8%A1%E6%9D%BF)
+            - [类模板的成员模板](#%E7%B1%BB%E6%A8%A1%E6%9D%BF%E7%9A%84%E6%88%90%E5%91%98%E6%A8%A1%E6%9D%BF)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -5887,3 +5890,77 @@ int main() {
     return 0;
 }
 ```
+
+### 成员模板
+
+一个类可以包含本身是模板的成员函数。这种成员被称为成员模板。成员模板不能是虚函数。
+
+#### 普通(非模板)类的成员模板
+
+**test52/main1.cc**
+
+```cpp
+#include <iostream>
+#include <string>
+#include <memory>
+
+class DebugDelete {
+public:
+    DebugDelete(std::ostream &s = std::cerr) : os(s) {}
+    template <typename T> void operator()(T *p) const {
+        os << "deleting unique_ptr" << std::endl;
+        delete p;
+    }
+private:
+    std::ostream &os;
+};
+
+int main() {
+    std::unique_ptr<int, DebugDelete> p1(new int, DebugDelete());
+    std::unique_ptr<std::string, DebugDelete> p2(new std::string, DebugDelete());
+
+    return 0;
+}
+```
+
+unique_ptr的析构函数会调用DebugDelete的调用运算符。因此，无论何时unique_ptr的析构函数实例化时，DebugDelete的调用运算符都会实例化。因此，上述定义会这样实例化：
+
+```cpp
+void DebugDelete::operator()(int *p) const {delete p;}
+void DebugDelete::operator()(std::string *p) {delete p;} 
+```
+
+#### 类模板的成员模板
+
+对于类模板，我们可以为其定义成员模板，在此情况下，类和成员各自有自己独立的模板参数。
+
+**test52/main2.cc**
+
+```cpp
+#include <iostream>
+#include <list>
+#include <vector>
+
+template <typename T>
+class A {
+public:
+    template <typename It> A(It b, It e);
+private:
+    std::vector<T> data;
+};
+
+template <typename T>
+template <typename It>
+A<T>::A(It b, It e) : data(b, e) {
+    std::cout << "template constructor" << std::endl;
+}
+
+int main() {
+    std::list<int> list2 = {1, 2, 3};
+    A<int> a(list2.begin(), list2.end());
+
+    return 0;
+}
+```
+
+当我们在类模板外定义一个成员模板时，必须同时为类模板和成员模板提供模板参数列表，类模板的参数列表在前，后跟成员函数自己的模板参数列表。
