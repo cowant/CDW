@@ -110,6 +110,7 @@
         - [成员模板](#%E6%88%90%E5%91%98%E6%A8%A1%E6%9D%BF)
             - [普通非模板类的成员模板](#%E6%99%AE%E9%80%9A%E9%9D%9E%E6%A8%A1%E6%9D%BF%E7%B1%BB%E7%9A%84%E6%88%90%E5%91%98%E6%A8%A1%E6%9D%BF)
             - [类模板的成员模板](#%E7%B1%BB%E6%A8%A1%E6%9D%BF%E7%9A%84%E6%88%90%E5%91%98%E6%A8%A1%E6%9D%BF)
+        - [控制实例化](#%E6%8E%A7%E5%88%B6%E5%AE%9E%E4%BE%8B%E5%8C%96)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -5964,3 +5965,315 @@ int main() {
 ```
 
 当我们在类模板外定义一个成员模板时，必须同时为类模板和成员模板提供模板参数列表，类模板的参数列表在前，后跟成员函数自己的模板参数列表。
+
+### 控制实例化
+
+当两个或者多个独立编译的源文件使用了相同的模板，并提供了相同的模板参数，每个文件中就都会有该模板的一个实例。
+
+在大系统中，在多个文件中实例化相同模板的额外开销可能非常严重。在C++11新标准中，我们可以通过**显式实例化**来避免这种开销。一个显式实例化有如下形式：
+
+```cpp
+extern template declaration; // 实例化声明
+template declaration; // 实例化定义
+```
+
+**declaration**是一个类或函数声明，其中所有模板参数已被替换为模板实参。
+
+当编译器遇到extern模版声明时，它不会在本文件中生成实例化代码。将一个实例化声明为extern就表示承诺在程序的其他位置有该实例化的一个非extern声明(定义)。对于一个给定的实例化版本，可能有多个extern声明，但必须只有一个定义。
+
+**test53/case1**
+
+**`bigfunction.h`**
+```cpp
+// bigfunction.h
+
+#ifndef _bigfunction_h_
+#define _bigfunction_h_
+
+#include <iostream>
+
+template <typename T>
+void BigFunction() {
+    std::cout << "template typename is: " << typeid(T).name() << std::endl;
+}
+
+#endif
+```
+
+**`f1.cc`**
+```cpp
+// f1.cc
+
+#include "bigfunction.h"
+
+void F1() {
+    BigFunction<int>();
+}
+```
+
+**`f2.cc`**
+
+```cpp
+// f2.cc
+
+#include "bigfunction.h"
+
+void F2() {
+    BigFunction<int>();
+}
+```
+
+**`main.cc`**
+
+```cpp
+// main.cc
+
+extern void F1();
+extern void F2();
+
+int main() {
+    F1();
+    F2();
+
+    return 0;
+}
+```
+
+分析f1.o和f2.o的符号：
+
+```bash
+$ nm -g -C --defined-only  f1.o
+0000000000000000 W void BigFunction<int>()
+0000000000000000 T F1()
+0000000000000000 W std::type_info::name() const
+```
+
+```bash
+$ nm -g -C --defined-only  f2.o
+0000000000000000 W void BigFunction<int>()
+0000000000000000 T F2()
+0000000000000000 W std::type_info::name() const
+```
+
+可以看到模板函数在f1.o和f2.o文件中分别有一个弱符号，也就是模板函数被实例化了两次。
+
+现在我们使用extern来控制模板函数的实例化：
+
+**test53/case2**
+
+**`bigfunction.h`**
+```cpp
+// bigfunction.h
+
+#ifndef _bigfunction_h_
+#define _bigfunction_h_
+
+#include <iostream>
+
+template <typename T>
+void BigFunction() {
+    ; // do nothing
+}
+
+#endif
+```
+
+**`f1.cc`**
+
+```cpp
+// f1.cc
+
+#include "bigfunction.h"
+
+void F1() {
+    BigFunction<int>();
+}
+```
+
+**`f2.cc`**
+
+```cpp
+// f2.cc
+#include "bigfunction.h"
+
+extern template void BigFunction<int>();
+
+void F2() {
+    BigFunction<int>();
+}
+```
+
+**`main.cc`**
+
+```cpp
+// main.cc
+extern void F1();
+extern void F2();
+
+int main() {
+    F1();
+    F2();
+
+    return 0;
+}
+```
+
+在case2/f2.cc中，我们把模板函数声明为extern，分析f1.o和f2.o的符号：
+
+```bash
+$ g++ -c f1.cc
+$ g++ -c f2.cc
+```
+
+```bash
+$ nm -g -C --defined-only f1.o
+0000000000000000 W void BigFunction<int>()
+0000000000000000 T F1()
+```
+
+```bash
+$ nm -g -C --defined-only f2.o
+0000000000000000 T F2()
+```
+
+可以看到f2.o中没有模板函数的符号，说明这个模板函数在f2.cc中没有实例化。
+
+但是这里会存在一个问题，当g++打开优化选项时，链接器会报找不到符号的错误：
+
+```bash
+$ g++ -O2 main.cc f1.cc  f2.cc
+/usr/bin/ld: /tmp/ccufS5Qf.o: in function `F2()':
+f2.cc:(.text+0x5): undefined reference to `void BigFunction<int>()'
+collect2: error: ld returned 1 exit status
+```
+
+这是为什么？还是来分析一下.o的符号：
+
+```bash
+$ g++ -O2 -c f1.cc
+$ nm -g -C f1.o
+0000000000000000 T F1()
+                 U std::ios_base_library_init()
+```
+
+```bash
+$ g++ -O2 -c f2.cc
+$ nm -g -C f2.o
+                 U void BigFunction<int>()
+0000000000000000 T F2()
+                 U std::ios_base_library_init()
+```
+
+-O2优化选项将f1.cc对模板函数BigFunction的调用进行了inline优化，所以在f1.o文件中没有BigFunction符号，而f2.cc中，由于我们把BigFunction模板函数声明为extern，那么在f2.o中BigFunction成了一个未定义的符号。当进行链接时，就会找不到这个符号。
+
+为了解决链接问题，同时减少模板实例化，我们可以进行如下处理：
+
+- 给头文件bigfunction.h增加extern实例化声明
+- 新增bigfunction.cc给出实例化定义
+- f1.cc include bigfunction.h
+- f2.cc include bigfunction.h
+
+**test53/case3**
+
+**`bigfunction.h`**
+
+```cpp
+// bigfunction.h
+
+#ifndef _bigfunction_h_
+#define _bigfunction_h_
+
+#include <string>
+
+template <typename T>
+void BigFunction() {
+    ; // do nothing
+}
+
+extern template void BigFunction<int>();
+extern template void BigFunction<std::string>();
+
+#endif
+```
+
+**`bigfunction.cc`**
+
+```cpp
+// bigfunction.cc
+
+#include "bigfunction.h"
+
+template void BigFunction<int>();
+template void BigFunction<std::string>();
+```
+
+**`f1.cc`**
+
+```cpp
+// f1.cc
+
+#include "bigfunction.h"
+
+void F1() {
+    BigFunction<int>();
+    BigFunction<std::string>();
+}
+```
+
+**`f2.cc`**
+
+```cpp
+// f2.cc
+
+#include "bigfunction.h"
+
+void F2() {
+    BigFunction<int>();
+    BigFunction<std::string>();
+}
+```
+
+**`main.cc`**
+
+```cpp
+// main.cc
+
+extern void F1();
+extern void F2();
+
+int main() {
+    F1();
+    F2();
+
+    return 0;
+}
+```
+
+现在来看各个.o文件的符号：
+
+```bash
+$ g++ -O2 -c bigfunction.cc
+$ g++ -O2 -c f1.cc
+$ g++ -O2 -c f2.cc
+$ g++ -O2 -c main.cc
+$ nm -g -C  *.o
+
+bigfunction.o:
+0000000000000000 W void BigFunction<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >()
+0000000000000000 W void BigFunction<int>()
+
+f1.o:
+                 U void BigFunction<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >()
+                 U void BigFunction<int>()
+0000000000000000 T F1()
+
+f2.o:
+                 U void BigFunction<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >()
+                 U void BigFunction<int>()
+0000000000000000 T F2()
+
+main.o:
+                 U F1()
+                 U F2()
+0000000000000000 T main
+```
