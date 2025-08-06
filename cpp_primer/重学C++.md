@@ -111,6 +111,8 @@
             - [普通非模板类的成员模板](#%E6%99%AE%E9%80%9A%E9%9D%9E%E6%A8%A1%E6%9D%BF%E7%B1%BB%E7%9A%84%E6%88%90%E5%91%98%E6%A8%A1%E6%9D%BF)
             - [类模板的成员模板](#%E7%B1%BB%E6%A8%A1%E6%9D%BF%E7%9A%84%E6%88%90%E5%91%98%E6%A8%A1%E6%9D%BF)
         - [控制实例化](#%E6%8E%A7%E5%88%B6%E5%AE%9E%E4%BE%8B%E5%8C%96)
+    - [模板实参推断](#%E6%A8%A1%E6%9D%BF%E5%AE%9E%E5%8F%82%E6%8E%A8%E6%96%AD)
+        - [类型转换与模板类型参数](#%E7%B1%BB%E5%9E%8B%E8%BD%AC%E6%8D%A2%E4%B8%8E%E6%A8%A1%E6%9D%BF%E7%B1%BB%E5%9E%8B%E5%8F%82%E6%95%B0)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -6164,14 +6166,14 @@ $ nm -g -C f2.o
                  U std::ios_base_library_init()
 ```
 
--O2优化选项将f1.cc对模板函数BigFunction的调用进行了inline优化，所以在f1.o文件中没有BigFunction符号，而f2.cc中，由于我们把BigFunction模板函数声明为extern，那么在f2.o中BigFunction成了一个未定义的符号。当进行链接时，就会找不到这个符号。
+-O2优化选项将f1\.cc对模板函数BigFunction的调用进行了inline优化，所以在f1.o文件中没有BigFunction符号，而f2\.cc中，由于我们把BigFunction模板函数声明为extern，那么在f2.o中BigFunction成了一个未定义的符号。当进行链接时，就会找不到这个符号。
 
 为了解决链接问题，同时减少模板实例化，我们可以进行如下处理：
 
 - 给头文件bigfunction.h增加extern实例化声明
 - 新增bigfunction.cc给出实例化定义
-- f1.cc include bigfunction.h
-- f2.cc include bigfunction.h
+- f1\.cc include bigfunction.h
+- f2\.cc include bigfunction.h
 
 **test53/case3**
 
@@ -6276,4 +6278,79 @@ main.o:
                  U F1()
                  U F2()
 0000000000000000 T main
+```
+
+## 模板实参推断
+
+### 类型转换与模板类型参数
+
+与非模板函数一样，我们在一次调用中传递给函数模板的实参被用来初始化函数的形参。如果一个函数形参的类型使用了模板类型参数，那么它采用特殊的初始化规则。只有很有限的几种类型转换会自动地应用于这些实参。编译器通常不是对实参进行类型转换，而是生成一个新的模板实例。
+
+将实参转换给带模板类型的函数形参时，能够自动应用的类型转换只有const转换及数组或函数到指针的转换。
+
+**test54/main1.cc**
+
+```cpp
+// template.hpp
+
+template <typename T>
+void Fobj(T t1, T t2) {
+    ; // do nothing
+}
+
+template <typename T>
+void Fref(const T &t1, const T &t2) {
+    ; // do nothing
+}
+
+// main1.cc
+
+#include "template.hpp"
+#include <string>
+
+int main() {
+    std::string s1("xxx");
+    const std::string s2("zzz");
+
+    Fobj(s1, s2); // 调用Fobj(std::string, std::string), s2的顶层const属性被忽略
+    Fref(s1, s2); // 调用Fref(const std::string &, const std::string &)
+
+    return 0;
+}
+```
+
+**test54/main2.cc**
+
+```cpp
+// main2.cc
+#include "template.hpp"
+
+int main() {
+    int a[12] = {};
+    int b[12] = {};
+    int c[42] = {};
+
+    Fobj(a, b); // 调用Fobj(int *, int *)
+    Fref(a, b); // 调用Fref(const int &[12], const inst &[12])
+    Fref(b, c); // 错误，数组类型不匹配
+
+    return 0;
+}
+```
+
+编译**main2\.cc**，报错：
+
+```bash
+main2.cc: In function ‘int main()’:
+main2.cc:10:9: error: no matching function for call to ‘Fref(int [12], int [42])’
+   10 |     Fref(b, c); // 错误，数组类型不匹配
+      |     ~~~~^~~~~~
+In file included from main2.cc:1:
+template.hpp:7:6: note: candidate: ‘template<class T> void Fref(const T&, const T&)’
+    7 | void Fref(const T &t1, const T &t2) {
+      |      ^~~~
+template.hpp:7:6: note:   template argument deduction/substitution failed:
+main2.cc:10:9: note:   deduced conflicting types for parameter ‘const T’ (‘int [12]’ and ‘int [42]’)
+   10 |     Fref(b, c); // 错误，数组类型不匹配
+      |     ~~~~^~~~~~
 ```
