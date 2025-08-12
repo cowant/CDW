@@ -113,6 +113,7 @@
         - [控制实例化](#%E6%8E%A7%E5%88%B6%E5%AE%9E%E4%BE%8B%E5%8C%96)
     - [模板实参推断](#%E6%A8%A1%E6%9D%BF%E5%AE%9E%E5%8F%82%E6%8E%A8%E6%96%AD)
         - [类型转换与模板类型参数](#%E7%B1%BB%E5%9E%8B%E8%BD%AC%E6%8D%A2%E4%B8%8E%E6%A8%A1%E6%9D%BF%E7%B1%BB%E5%9E%8B%E5%8F%82%E6%95%B0)
+        - [函数模板显式实参](#%E5%87%BD%E6%95%B0%E6%A8%A1%E6%9D%BF%E6%98%BE%E5%BC%8F%E5%AE%9E%E5%8F%82)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -6354,3 +6355,54 @@ main2.cc:10:9: note:   deduced conflicting types for parameter ‘const T’ (�
    10 |     Fref(b, c); // 错误，数组类型不匹配
       |     ~~~~^~~~~~
 ```
+
+### 函数模板显式实参
+
+- 在某些情况下，编译器无法推断出模板实参的类型
+- 其他一些情况下，我们希望允许用户控制模板实例化
+
+当函数返回类型与参数列表中任何类型都不相同时，这两种情况最常出现。
+
+**test55**
+
+```cpp
+// main1.cc
+#include <iostream>
+
+// 编译器无法推断T1, 它未出现在函数形参列表中
+template <typename T1, typename T2, typename T3>
+T1 Sum(T2 a, T3 b) {
+    std::cout << typeid(T1).name() << std::endl;
+    std::cout << typeid(T2).name() << std::endl;
+    std::cout << typeid(T3).name() << std::endl;
+    return a + b;
+}
+
+int main() {
+    int a = 1;
+    long b = 2;
+    auto val3 = Sum<long long>(a, b);
+
+    return 0;
+}
+```
+
+编译并运行：
+
+```bash
+$ g++ main1.cc
+$ ./a.out
+x
+i
+l
+$ c++filt  -t x
+long long
+$ c++filt  -t i
+int
+$ c++filt  -t l
+long
+```
+
+可以看到，T1的类型被显式指定为long long, T2 T3的类型则根据函数实参分别推断为int, long。
+
+显式模板实参按从左至右的顺序与对应的模板参数匹配：第$i$个模板实参与第$i$个模板参数匹配。
