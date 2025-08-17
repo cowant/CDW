@@ -114,6 +114,9 @@
     - [模板实参推断](#%E6%A8%A1%E6%9D%BF%E5%AE%9E%E5%8F%82%E6%8E%A8%E6%96%AD)
         - [类型转换与模板类型参数](#%E7%B1%BB%E5%9E%8B%E8%BD%AC%E6%8D%A2%E4%B8%8E%E6%A8%A1%E6%9D%BF%E7%B1%BB%E5%9E%8B%E5%8F%82%E6%95%B0)
         - [函数模板显式实参](#%E5%87%BD%E6%95%B0%E6%A8%A1%E6%9D%BF%E6%98%BE%E5%BC%8F%E5%AE%9E%E5%8F%82)
+        - [进行类型转换的标准模板库](#%E8%BF%9B%E8%A1%8C%E7%B1%BB%E5%9E%8B%E8%BD%AC%E6%8D%A2%E7%9A%84%E6%A0%87%E5%87%86%E6%A8%A1%E6%9D%BF%E5%BA%93)
+        - [函数指针和实参推断](#%E5%87%BD%E6%95%B0%E6%8C%87%E9%92%88%E5%92%8C%E5%AE%9E%E5%8F%82%E6%8E%A8%E6%96%AD)
+        - [引用折叠和右值引用参数](#%E5%BC%95%E7%94%A8%E6%8A%98%E5%8F%A0%E5%92%8C%E5%8F%B3%E5%80%BC%E5%BC%95%E7%94%A8%E5%8F%82%E6%95%B0)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -6406,3 +6409,101 @@ long
 可以看到，T1的类型被显式指定为long long, T2 T3的类型则根据函数实参分别推断为int, long。
 
 显式模板实参按从左至右的顺序与对应的模板参数匹配：第$i$个模板实参与第$i$个模板参数匹配。
+
+
+### 进行类型转换的标准模板库
+
+- remove_reference
+
+**test56/main1.cc**
+
+```cpp
+#include <vector>
+#include <type_traits>
+#include <string>
+
+template <typename Iter>
+auto Func(Iter beg, Iter end) -> typename std::remove_reference<decltype(*beg)>::type {
+    return *beg;
+}
+
+int main() {
+    std::vector<std::string> vec = {"a", "b", "c", "d"};
+
+    return 0;
+}
+```
+
+### 函数指针和实参推断
+
+**test57/main1.cc**
+
+```cpp
+#include <string>
+
+template <typename T>
+int Compare(const T& a, const T& b) {
+    if (a > b) {
+        return 1;
+    } else if (a < b) {
+        return -1;
+    } else {
+        return 0;
+    }
+}
+
+int main() {
+    int (*func1) (const int&, const int &) = Compare;
+    int (*func2) (const std::string&, const std::string&) = Compare;
+
+    func1(1, 2);
+    func2(std::string("a"), std::string("b"));
+
+    return 0;
+}
+```
+
+### 引用折叠和右值引用参数
+
+引用折叠只能应用于间接创建的引用的引用，如类型别名或模板参数
+
+对于一个给定类型X:
+- X& &, X& &&, X&& &都折叠成类型X&
+- 类型X&& &&折叠成X&&
+
+**test58/main1.cc**
+```cpp
+#include <string>
+#include <iostream>
+
+template <typename T>
+void Func(T&& a) {
+    T i = 5;
+}
+
+int main() {
+    int i = 0;
+    Func(i);
+    Func(5);
+
+    return 0;
+}
+```
+
+编译并运行：
+
+```bash
+$ g++ main1.cc
+main1.cc: In instantiation of ‘void Func(T&&) [with T = int&]’:
+main1.cc:12:9:   required from here
+   12 |     Func(i);
+      |     ~~~~^~~
+main1.cc:7:11: error: cannot bind non-const lvalue reference of type ‘int&’ to an rvalue of type ‘int’
+    7 |     T i = 5;
+      |           ^
+```
+
+当我们将一个左值(如i)传递给函数的右值引用参数，且此右值引用指向模板类型参数(如T&&)时，编译器推断模板类型参数为实参的的左值引用类型。因此，当我们调用Func(i)时，编译器推断T的类型为int&, 而非int。
+
+T被推断为int&看起来好像意味着Func的函数参数是一个类型int&的右值引用，但我们不能直接定义一个引用的引用，这种情况下就会发生引用折叠。
+
