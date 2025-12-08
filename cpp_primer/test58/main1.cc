@@ -1,7 +1,3 @@
-#include <string>
-#include <iostream>
-#include <utility>
-
 template <typename T>
 void Func(T&& a) {
     T i = 5;
@@ -9,8 +5,8 @@ void Func(T&& a) {
 
 int main() {
     int i = 0;
-    Func(i);
-    Func(5);
+    Func(i); // 错误, T = int&
+    Func(5); // 正确, T = int
 
     return 0;
 }
