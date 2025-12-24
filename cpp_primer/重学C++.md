@@ -121,6 +121,8 @@
             - [从右值引用函数参数推断类型](#%E4%BB%8E%E5%8F%B3%E5%80%BC%E5%BC%95%E7%94%A8%E5%87%BD%E6%95%B0%E5%8F%82%E6%95%B0%E6%8E%A8%E6%96%AD%E7%B1%BB%E5%9E%8B)
             - [引用折叠和右值引用参数](#%E5%BC%95%E7%94%A8%E6%8A%98%E5%8F%A0%E5%92%8C%E5%8F%B3%E5%80%BC%E5%BC%95%E7%94%A8%E5%8F%82%E6%95%B0)
             - [编写接收右值引用参数的模板函数](#%E7%BC%96%E5%86%99%E6%8E%A5%E6%94%B6%E5%8F%B3%E5%80%BC%E5%BC%95%E7%94%A8%E5%8F%82%E6%95%B0%E7%9A%84%E6%A8%A1%E6%9D%BF%E5%87%BD%E6%95%B0)
+        - [理解std::move](#%E7%90%86%E8%A7%A3stdmove)
+        - [转发](#%E8%BD%AC%E5%8F%91)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -6552,39 +6554,23 @@ void f3<int&> (int &);
 
 #### 编写接收右值引用参数的模板函数
 
-**test58/main1.cc**
+模板参数可以推断为一个引用类型，这一特性对模板内的代码可能有令人惊讶的影响：
+
 ```cpp
-#include <string>
-#include <iostream>
-
-template <typename T>
-void Func(T&& a) {
-    T i = 5;
-}
-
-int main() {
-    int i = 0;
-    Func(i);
-    Func(5);
-
-    return 0;
+template <typename T> void f3(T&& val) {
+    T t = val; // 拷贝还是绑定一个引用?
+    t = fcn(t); // 赋值是只改变t还是既改变t又改变val?
+    if (val == t) { // 若T是引用类型，则一直为true
+        // ...
+    }
 }
 ```
 
-编译并运行：
+当我们对一个右值调用f3时，T = int；当我们对一个左值i调用f3时，T = int&。
 
-```bash
-$ g++ main1.cc
-main1.cc: In instantiation of ‘void Func(T&&) [with T = int&]’:
-main1.cc:12:9:   required from here
-   12 |     Func(i);
-      |     ~~~~^~~
-main1.cc:7:11: error: cannot bind non-const lvalue reference of type ‘int&’ to an rvalue of type ‘int’
-    7 |     T i = 5;
-      |           ^
-```
 
-因此，当我们调用Func(i)时，编译器推断T的类型为int&, 而非int。
+### 理解std::move
 
-T被推断为int&看起来好像意味着Func的函数参数是一个类型int&的右值引用，但我们不能直接定义一个引用的引用，这种情况下就会发生引用折叠。
 
+
+### 转发
