@@ -6620,5 +6620,18 @@ std::string&& std::move(std::string& __t) {
 ```
 __t的类型是std::string&，static_cast将其转换为std::string&&。这里有一条针对右值引用的特许规则：**虽然不能将一个左值转换为右值引用，但我们可以用static_cast显式地转换为一个右值引用**。
 
+**test58/main2.cc**
+
+```cpp
+int main() {
+    int i = 0;
+    int& r2 = i;
+
+    int&& r3 = static_cast<int&&>(i);
+    int&& r4 = static_cast<int&&>(r2);
+
+    return 0;
+}
+```
 
 ### 转发
