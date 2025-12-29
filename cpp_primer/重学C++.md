@@ -122,6 +122,8 @@
             - [引用折叠和右值引用参数](#%E5%BC%95%E7%94%A8%E6%8A%98%E5%8F%A0%E5%92%8C%E5%8F%B3%E5%80%BC%E5%BC%95%E7%94%A8%E5%8F%82%E6%95%B0)
             - [编写接收右值引用参数的模板函数](#%E7%BC%96%E5%86%99%E6%8E%A5%E6%94%B6%E5%8F%B3%E5%80%BC%E5%BC%95%E7%94%A8%E5%8F%82%E6%95%B0%E7%9A%84%E6%A8%A1%E6%9D%BF%E5%87%BD%E6%95%B0)
         - [理解std::move](#%E7%90%86%E8%A7%A3stdmove)
+            - [std::move是如何定义的](#stdmove%E6%98%AF%E5%A6%82%E4%BD%95%E5%AE%9A%E4%B9%89%E7%9A%84)
+            - [std::move是如何工作的](#stdmove%E6%98%AF%E5%A6%82%E4%BD%95%E5%B7%A5%E4%BD%9C%E7%9A%84)
         - [转发](#%E8%BD%AC%E5%8F%91)
 
 <!-- /TOC -->
@@ -6571,6 +6573,52 @@ template <typename T> void f3(T&& val) {
 
 ### 理解std::move
 
+#### std::move是如何定义的
+
+标准库中move的定义：
+
+```cpp
+template <typename _Tp> [[__nodiscard__]]
+constexpr typename std::remove_reference<_Tp>::type&&
+move(_Tp&& __t) noexcept {
+    return static_cast<typename std::remove_reference<_Tp>::type&&>(__t);
+}
+```
+
+#### std::move是如何工作的
+
+**test58/main1.cc**
+
+```cpp
+#include <string>
+#include <utility>
+
+int main() {
+    std::string s1("xxxx"), s2;
+
+    s2 = std::move(std::string("zzzz")); // 正确，从一个右值移动数据
+    s2 = std::move(s1); // 正确，但在赋值之后，s1的值是不确定的
+
+    return 0;
+}
+```
+
+**在第一个赋值中**，根据 _Tp && __t = std::string("zzzz")推断出_Tp = std::string，std::move实例化为：
+```cpp
+std::string && std::move(std::string&& __t) {
+    return static_cast<std::string&&>(__t);
+}
+```
+
+因为__t的类型已经是std::string&&，于是类型转换什么都不用做，因此，此调用的结果就是它所接受的右值引用。
+
+**在第二个赋值中**，根据_Tp&& __t = s2推断出_Tp = std::string&, __t类型由std::string& &&折叠为std::string&, std::move实例化为：
+```cpp
+std::string&& std::move(std::string& __t) {
+    return static_cast<std::string&&>(__t);
+}
+```
+__t的类型是std::string&，static_cast将其转换为std::string&&。这里有一条针对右值引用的特许规则：**虽然不能将一个左值转换为右值引用，但我们可以用static_cast显式地转换为一个右值引用**。
 
 
 ### 转发
