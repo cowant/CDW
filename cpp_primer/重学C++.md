@@ -6618,7 +6618,7 @@ std::string&& std::move(std::string& __t) {
     return static_cast<std::string&&>(__t);
 }
 ```
-__t的类型是std::string&，static_cast将其转换为std::string&&。这里有一条针对右值引用的特许规则：**虽然不能将一个左值转换为右值引用，但我们可以用static_cast显式地转换为一个右值引用**。
+__t的类型是std::string&，static_cast将其转换为std::string&&。这里有一条针对右值引用的特许规则：**虽然不能隐式地将一个左值转换为右值引用，但我们可以用static_cast显式地转换为一个右值引用**。
 
 **test58/main2.cc**
 
@@ -6634,4 +6634,52 @@ int main() {
 }
 ```
 
+虽然我们可以用static_cast直接编写这种类型转换代码，但使用标准库的move函数是容易得多的方式。而且统一使用std::move使得我们在程序中查到潜在的截断左值的代码变得很容易。
+
 ### 转发
+
+简单来说，C++ 的**完美转发（Perfect Forwarding）**是为了解决一个核心痛点：**如何在函数模板中，将参数“原封不动”地传递给另一个函数？**
+
+所谓“原封不动”，是指参数的**值类型（左值还是右值）**和**修饰符（const等）**在传递过程中都能保持不变。
+
+
+核心矛盾：参数在传递中会“退化”，在 C++ 中，一旦右值有了名字，它就变成了左值。
+
+**test59/main.cc**
+
+```cpp
+#include <iostream>
+
+void F(int&& i) {
+    std::cout << "F(int&&)" << std::endl;
+}
+
+void wrapper(int&& ii) {
+    F(ii);
+}
+
+int main() {
+    wrapper(10);
+
+    return 0;
+}
+```
+
+虽然我们传递给wrapper的实参是一个右值，但wrapper调用的函数F并不知道这点，参数传递链：
+
+```
+int&& ii = 10; ===>
+int&& i = ii;
+```
+
+显然，右值引用是无法绑定到一个左值的，于是编译报错：
+
+```
+main.cc: In function ‘void wrapper(int&&)’:
+main.cc:8:7: error: cannot bind rvalue reference of type ‘int&&’ to lvalue of type ‘int’
+    8 |     F(i);
+      |       ^
+main.cc:3:14: note:   initializing argument 1 of ‘void F(int&&)’
+    3 | void F(int&& i) {
+      |        ~~~~~~^
+```
