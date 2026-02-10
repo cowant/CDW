@@ -125,6 +125,7 @@
             - [std::move是如何定义的](#stdmove%E6%98%AF%E5%A6%82%E4%BD%95%E5%AE%9A%E4%B9%89%E7%9A%84)
             - [std::move是如何工作的](#stdmove%E6%98%AF%E5%A6%82%E4%BD%95%E5%B7%A5%E4%BD%9C%E7%9A%84)
         - [转发](#%E8%BD%AC%E5%8F%91)
+            - [理解std::forward](#%E7%90%86%E8%A7%A3stdforward)
 
 <!-- /TOC -->
 # 优先级与结合律
@@ -6638,9 +6639,9 @@ int main() {
 
 ### 转发
 
-简单来说，C++ 的**完美转发（Perfect Forwarding）**是为了解决一个核心痛点：**如何在函数模板中，将参数“原封不动”地传递给另一个函数？**
+简单来说，C++ 的**完美转发**(Perfect Forwarding)是为了解决一个核心痛点：**如何在函数模板中，将参数“原封不动”地传递给另一个函数？**
 
-所谓“原封不动”，是指参数的**值类型（左值还是右值）**和**修饰符（const等）**在传递过程中都能保持不变。
+所谓“原封不动”，是指参数的**值类型**（左值还是右值）和**修饰符**（const等）在传递过程中都能保持不变。
 
 
 核心矛盾：参数在传递中会“退化”，在 C++ 中，一旦右值有了名字，它就变成了左值。
@@ -6683,3 +6684,30 @@ main.cc:3:14: note:   initializing argument 1 of ‘void F(int&&)’
     3 | void F(int&& i) {
       |        ~~~~~~^
 ```
+
+为了解决这个问题，C++11引入了std::forward。与std::move不同，std::forward必须通过显式模板实参来调用。它返回该显示实参类型的右值引用。即，std::forward<T>的返回类型是T&&。
+
+**test59/main2.cc**
+
+```cpp
+#include <iostream>
+#include <utility>
+
+void F(int&& i) {
+    std::cout << "F(int&&)" << std::endl;
+}
+
+void wrapper(int&& i) {
+    F(std::forward<int>(i));
+}
+
+int main() {
+    wrapper(10);
+
+    return 0;
+}
+```
+
+#### 理解std::forward
+
+
