@@ -1,16 +1,17 @@
 #include <iostream>
-#include <utility>
 
-void F(int&& i) {
-    std::cout << "F(int&&)" << std::endl;
+std::ostream& log(std::ostream& out) {
+    return out;
 }
 
-void wrapper(int&& i) {
-    F(std::forward<int>(i));
+template <typename T, typename... Args>
+std::ostream& log(std::ostream& out, const T& t, const Args& ... args) {
+    out << t << " ";
+    return log(out, args...);
 }
 
 int main() {
-    wrapper(10);
+    log(std::cout, 1, 1.0, "hello") << std::endl;
 
     return 0;
 }
